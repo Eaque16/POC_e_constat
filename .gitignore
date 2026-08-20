@@ -4,9 +4,15 @@ __pycache__/
 
 .env
 
+# Docker Compose local overrides
+compose.override.yaml
+
 data/audio_samples/*
 !data/audio_samples/.gitkeep
 
 .pytest_cache/
 .vscode/
 .idea/
+
+# Local development tools and downloaded model runtimes
+.tools/

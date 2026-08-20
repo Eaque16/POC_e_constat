@@ -1,0 +1,8 @@
+FROM ../../.tools/gguf/qwen2.5-1.5b-instruct-q4_k_m.gguf
+
+PARAMETER temperature 0
+PARAMETER num_ctx 2048
+
+SYSTEM """Tu extrais des informations de constats automobiles en francais.
+Tu n'inventes jamais une information absente et tu respectes strictement le
+JSON Schema demande par l'application."""

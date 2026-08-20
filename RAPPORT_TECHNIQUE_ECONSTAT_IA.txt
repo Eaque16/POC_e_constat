@@ -1,0 +1,695 @@
+RAPPORT TECHNIQUE COMPLET — E-CONSTAT IA
+=========================================
+
+Date du rapport : 20 août 2026
+Projet analysé : /home/komelan01/econstat-ai
+Nature du projet : preuve de concept (POC) locale et open source
+
+
+1. OBJECTIF DU PROJET
+---------------------
+
+E-Constat IA est une application de déclaration vocale d'un sinistre automobile.
+L'assuré enregistre ou importe un récit audio. Le système :
+
+1) reçoit et contrôle le fichier audio ;
+2) transcrit localement le récit en français ;
+3) transforme la transcription en un E-Constat JSON structuré ;
+4) repère les informations critiques absentes ;
+5) prépare les questions complémentaires à poser ;
+6) propose prudemment des corrections pour certains noms et lieux ivoiriens.
+
+Le flux fonctionnel est :
+
+Microphone/fichier audio
+        -> interface Gradio
+        -> API FastAPI /audio/transcribe
+        -> Faster-Whisper
+        -> texte et segments horodatés
+        -> API FastAPI /claims/extract
+        -> extracteur déterministe ou Qwen/Ollama
+        -> E-Constat JSON
+        -> champs manquants, questions et suggestions de correction
+
+Le traitement est conçu pour fonctionner localement. Par défaut, l'extraction
+rapide ne nécessite ni service cloud ni modèle de langage actif.
+
+
+2. TECHNOLOGIES ET ARCHITECTURE
+-------------------------------
+
+Langage principal : Python
+Backend HTTP       : FastAPI
+Serveur ASGI       : Uvicorn
+Frontend           : Gradio
+Validation         : Pydantic
+Client HTTP        : HTTPX
+Transcription      : Faster-Whisper / CTranslate2
+Modèle LLM local   : Qwen 2.5 1.5B via Ollama (facultatif)
+Tests              : unittest, avec pytest disponible en développement
+
+Architecture logique :
+
+frontend/app.py
+   |
+   | HTTP
+   v
+backend/app/main.py
+   |
+   +-- api/transcription.py -> services/transcription.py -> Faster-Whisper
+   |
+   +-- api/claims.py
+          +-- services/extraction.py (rapide et déterministe)
+          +-- services/ollama_client.py (analyse Qwen facultative)
+          +-- services/claim_questions.py (complétude)
+          +-- services/domain_lexicon.py (noms et lieux ivoiriens)
+          +-- schemas/*.py (contrats Pydantic)
+
+Le projet sépare correctement :
+- la présentation dans frontend/ ;
+- les routes HTTP dans backend/app/api/ ;
+- les structures de données dans backend/app/schemas/ ;
+- la logique métier dans backend/app/services/ ;
+- les ressources IA dans ai/ ;
+- les références du domaine dans data/ ;
+- la vérification automatisée dans tests/.
+
+
+3. ARBORESCENCE ET RÔLE DES FICHIERS
+------------------------------------
+
+Fichiers à la racine
+~~~~~~~~~~~~~~~~~~~~
+
+README.md
+  Documentation principale : objectif, installation, démarrage du backend,
+  démarrage du frontend, activation d'Ollama, tests et configuration.
+
+.env.example
+  Exemple de variables d'environnement. Il centralise le modèle Whisper,
+  le matériel d'inférence, la limite d'upload, l'adresse du backend et les
+  paramètres d'Ollama.
+
+.gitignore
+  Définit les fichiers locaux qui ne doivent pas être versionnés.
+
+requirements.txt
+  Liste figée des dépendances nécessaires à l'exécution.
+
+requirements-dev.txt
+  Réutilise requirements.txt et ajoute pytest>=8.0,<10.0.
+
+Backend
+~~~~~~~
+
+backend/__init__.py
+backend/app/__init__.py
+backend/app/api/__init__.py
+backend/app/schemas/__init__.py (implicite si absent selon packaging utilisé)
+backend/app/services/__init__.py
+  Marquent les répertoires Python comme modules/imports du projet.
+
+backend/app/main.py
+  Point d'entrée FastAPI. Crée l'application « E-Constat IA API », version
+  0.1.0, branche les routes audio et claims, puis expose :
+  - GET / : retourne le nom du projet et l'état running ;
+  - GET /health : retourne {"status": "ok"}.
+
+backend/app/api/transcription.py
+  Implémente POST /audio/transcribe. Ce fichier :
+  - contrôle le nom et l'extension ;
+  - accepte WAV, MP3, M4A, OGG et WebM ;
+  - lit l'upload par blocs de 1 Mio ;
+  - applique une limite configurable, 25 Mio par défaut ;
+  - refuse un fichier vide ou trop volumineux ;
+  - écrit dans un fichier temporaire ;
+  - exécute le travail bloquant dans un thread FastAPI ;
+  - supprime toujours le fichier temporaire ;
+  - traduit les erreurs en réponses HTTP 400, 413, 415 ou 500.
+
+backend/app/api/claims.py
+  Implémente POST /claims/extract. Ce fichier :
+  - sélectionne l'extraction rapide ou Ollama ;
+  - accepte aussi le choix use_llm envoyé par le frontend ;
+  - revient automatiquement à l'extracteur déterministe si Ollama échoue ;
+  - calcule les champs critiques manquants ;
+  - génère les questions complémentaires ;
+  - calcule les suggestions de correction ;
+  - mesure le temps de traitement en millisecondes.
+
+Schémas de données
+~~~~~~~~~~~~~~~~~~
+
+backend/app/schemas/claim.py
+  Définit le modèle central EConstat et ses sous-modèles :
+
+  Assure :
+  - nom ;
+  - prenom ;
+  - telephone ;
+  - numero_contrat.
+
+  Vehicule :
+  - immatriculation ;
+  - marque ;
+  - modele.
+
+  Sinistre :
+  - type_sinistre ;
+  - date_sinistre ;
+  - heure_sinistre ;
+  - lieu ;
+  - description ;
+  - liste des degats.
+
+  EConstat :
+  - assure ;
+  - vehicule ;
+  - sinistre ;
+  - transcription originale ;
+  - informations_manquantes ;
+  - confidence optionnelle, obligatoirement entre 0 et 1 si renseignée.
+
+  Les informations absentes restent nulles. Les listes utilisent une factory
+  pour éviter qu'elles soient partagées entre plusieurs objets.
+
+backend/app/schemas/transcription.py
+  Contrat de réponse de la transcription : texte, langue, probabilité de langue,
+  durée et segments. Chaque segment possède un début, une fin et un texte.
+
+backend/app/schemas/extraction.py
+  Contrats de l'extraction :
+  - requête avec transcription de 1 à 20 000 caractères et use_llm ;
+  - suggestion de correction avec champ, valeur entendue, suggestion,
+    confiance et question de confirmation ;
+  - réponse avec EConstat, méthode, champs manquants, questions, corrections
+    et temps de traitement.
+
+Services métier et IA
+~~~~~~~~~~~~~~~~~~~~~
+
+backend/app/services/transcription.py
+  Service Faster-Whisper. Il :
+  - valide le chemin et l'extension audio ;
+  - charge le modèle une seule fois grâce à lru_cache ;
+  - force la transcription en français ;
+  - active le filtre VAD pour les zones de parole ;
+  - désactive condition_on_previous_text ;
+  - emploie des hotwords et un prompt initial adaptés à la Côte d'Ivoire ;
+  - transforme l'itérateur Whisper en segments horodatés ;
+  - assemble les segments non vides en transcription complète ;
+  - retourne langue, probabilité et durée.
+
+backend/app/services/extraction.py
+  Extracteur conservateur sans LLM. Des expressions régulières et règles
+  explicites détectent :
+  - prénom et nom après « je m'appelle » ou « mon nom est » ;
+  - numéro de téléphone ;
+  - numéro de contrat/police ;
+  - immatriculation/plaque ;
+  - date explicite JJ/MM/AAAA ou JJ-MM-AAAA ;
+  - dates relatives « aujourd'hui » et « hier » ;
+  - heure ;
+  - lieu selon plusieurs formulations françaises ;
+  - collision, vol ou incendie ;
+  - dégâts : aile, capot, pare-chocs, phare, portière, porte, rétroviseur,
+    vitre.
+
+  Il n'invente pas les valeurs absentes et conserve la transcription complète
+  comme description du sinistre.
+
+backend/app/services/ollama_client.py
+  Client d'extraction structurée pour Ollama/Qwen. Il :
+  - construit le prompt français versionné ;
+  - envoie une requête à /api/chat ;
+  - impose le JSON Schema du modèle Pydantic ExtractedClaim ;
+  - utilise temperature=0 ;
+  - valide le JSON retourné ;
+  - compare les données critiques avec le texte source ;
+  - rejette une valeur critique non justifiée par la transcription ;
+  - limite le type aux valeurs collision, vol ou incendie ;
+  - ne conserve un dégât proposé que s'il apparaît dans le récit ;
+  - fusionne le résultat sûr avec l'extraction déterministe ;
+  - encapsule les erreurs réseau, JSON ou validation dans OllamaExtractionError.
+
+  Par prudence, les dates et heures restent issues de l'extracteur déterministe.
+
+backend/app/services/claim_questions.py
+  Vérifie sept champs critiques et produit une question pour chacun des champs
+  absents : prénom, nom, contrat, immatriculation, date, lieu et type de sinistre.
+
+backend/app/services/domain_lexicon.py
+  Charge et met en cache les lexiques ivoiriens. Il :
+  - normalise accents et ponctuation pour les comparaisons ;
+  - fournit à Whisper un contexte lexical ;
+  - cherche la valeur la plus proche avec SequenceMatcher ;
+  - utilise un seuil de 0,74 pour les lieux ;
+  - utilise un seuil de 0,82 pour les noms/prénoms ;
+  - propose une confirmation sans modifier silencieusement la valeur critique.
+
+Frontend
+~~~~~~~~
+
+frontend/__init__.py
+  Initialise le paquet frontend.
+
+frontend/app.py
+  Interface Gradio de démonstration. Elle contient :
+  - une présentation visuelle personnalisée en CSS ;
+  - un composant microphone/import audio ;
+  - l'appel HTTP de transcription au backend ;
+  - un délai de transcription allant jusqu'à 600 secondes ;
+  - l'affichage du texte, de la langue, de la confiance, de la durée et des
+    segments ;
+  - l'appel HTTP d'extraction ;
+  - une option « analyse approfondie » pour use_llm ;
+  - l'affichage du JSON E-Constat et des questions manquantes ;
+  - des messages français pour les erreurs de fichier, backend ou réponse.
+
+  Adresse par défaut : http://127.0.0.1:7860
+  Backend par défaut : http://127.0.0.1:8000
+
+Ressources IA
+~~~~~~~~~~~~~
+
+ai/prompts/claim_extraction_fr.txt
+  Prompt français versionné. Il interdit au LLM d'inventer, impose null pour
+  l'incertain, demande le format ISO pour les dates et exige un JSON conforme.
+
+ai/models/qwen2.5-1.5b.Modelfile
+  Configuration Ollama pour un GGUF local Qwen 2.5 1.5B instruct Q4_K_M.
+  Température à 0, contexte à 2048 et instruction système anti-invention.
+
+Données de référence
+~~~~~~~~~~~~~~~~~~~~
+
+data/reference/ivorian_names.txt
+  Lexique versionné de noms ivoiriens.
+
+data/reference/ivory_coast_places.txt
+  Lexique versionné de lieux de Côte d'Ivoire.
+
+data/audio_samples/.gitkeep
+  Conserve le dossier d'échantillons audio dans Git même lorsqu'il est vide.
+
+Scripts
+~~~~~~~
+
+scripts/start_ollama.sh
+  Démarre le binaire Ollama local situé dans .tools/ollama/bin/ollama.
+  Configure :
+  - les modèles dans .tools/ollama-models ;
+  - l'écoute sur 127.0.0.1:11434 ;
+  - Vulkan désactivé ;
+  - contexte 2048 ;
+  - maintien du modèle en mémoire pendant 10 minutes.
+  Le script échoue explicitement si Ollama local est absent.
+
+scripts/test_transcription.py
+  Script manuel permettant de tester une transcription audio depuis le projet.
+
+scripts/__init__.py
+  Initialise le paquet scripts.
+
+Tests
+~~~~~
+
+tests/unit/test_transcription.py
+  Vérifie les fichiers absents, extensions refusées, assemblage des segments et
+  structure du résultat Whisper.
+
+tests/unit/test_transcription_api.py
+  Vérifie le nom/extension, fichier vide, taille maximale, réponse structurée et
+  suppression du fichier temporaire.
+
+tests/unit/test_extraction.py
+  Vérifie l'extraction explicite, l'absence d'invention, les lieux, dates
+  relatives et dates invalides.
+
+tests/unit/test_claims_api.py
+  Vérifie l'extraction rapide par défaut et le repli si Ollama est indisponible.
+
+tests/unit/test_claim_questions.py
+  Vérifie les informations manquantes et les questions associées.
+
+tests/unit/test_ollama_client.py
+  Vérifie le prompt anti-invention, la réponse structurée, la conservation de la
+  source et la gestion des erreurs réseau.
+
+tests/unit/test_frontend.py
+  Vérifie la construction Gradio, les champs affichés, les résultats backend,
+  l'absence d'audio/transcription et l'indisponibilité du backend.
+
+tests/unit/__init__.py
+  Initialise le paquet de tests.
+
+Les dossiers __pycache__ et .pytest_cache visibles localement sont des caches
+générés automatiquement. Ils ne constituent pas du code fonctionnel du projet.
+
+
+4. ENDPOINTS DE L'API
+---------------------
+
+GET /
+  Réponse : {"project": "E-Constat IA", "status": "running"}
+
+GET /health
+  Réponse : {"status": "ok"}
+
+POST /audio/transcribe
+  Entrée : multipart/form-data, champ audio.
+  Formats : .m4a, .mp3, .ogg, .wav, .webm.
+  Sortie : texte, langue, probabilité, durée et segments horodatés.
+
+POST /claims/extract
+  Entrée JSON :
+  {
+    "transcription": "récit du sinistre",
+    "use_llm": false
+  }
+
+  Sortie JSON :
+  {
+    "claim": { ... EConstat ... },
+    "extraction_method": "deterministic-fast",
+    "missing_fields": [],
+    "questions": [],
+    "correction_suggestions": [],
+    "processing_time_ms": 1.23
+  }
+
+Valeurs possibles observées pour extraction_method :
+- deterministic-fast ;
+- ollama-hybrid ;
+- deterministic-fallback.
+
+
+5. MODÈLES UTILISÉS
+-------------------
+
+Faster-Whisper « small »
+  Modèle de reconnaissance vocale utilisé par défaut, exécuté sur CPU en int8.
+  Le téléchargement du modèle intervient au premier usage s'il n'est pas en
+  cache. La langue française est imposée et le beam size vaut 3.
+
+Qwen 2.5 1.5B
+  Modèle de langage local facultatif via Ollama. Le projet référence :
+  - le modèle Ollama qwen2.5:1.5b dans .env.example ;
+  - un Modelfile pour un fichier GGUF instruct quantifié Q4_K_M.
+  Il sert uniquement à l'extraction structurée approfondie, pas à la
+  transcription.
+
+Extracteur déterministe Python
+  Ce n'est pas un modèle appris. Il repose sur des expressions régulières,
+  vocabulaires et règles explicites. Il garantit une réponse rapide et fournit
+  le mode de secours lorsque Qwen/Ollama n'est pas accessible.
+
+
+6. CONFIGURATION (.env.example)
+-------------------------------
+
+MODEL_NAME=small
+  Nom/taille du modèle Faster-Whisper.
+
+WHISPER_DEVICE=cpu
+  Matériel d'inférence.
+
+WHISPER_COMPUTE_TYPE=int8
+  Quantification optimisée pour CPU.
+
+WHISPER_BEAM_SIZE=3
+  Largeur de recherche de transcription.
+
+WHISPER_HOTWORDS=
+WHISPER_INITIAL_PROMPT=
+  Surcharges facultatives. Si vides, les lexiques ivoiriens sont utilisés.
+
+MAX_AUDIO_SIZE=26214400
+  Taille maximale d'un upload : 25 Mio.
+
+BACKEND_URL=http://127.0.0.1:8000
+  Adresse FastAPI appelée par Gradio.
+
+EXTRACTION_MODE=deterministic
+  Mode par défaut. Peut être remplacé par ollama.
+
+OLLAMA_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=qwen2.5:1.5b
+OLLAMA_TIMEOUT=120
+OLLAMA_MAX_TOKENS=256
+OLLAMA_CONTEXT_LENGTH=2048
+  Adresse, modèle, délai et limites d'Ollama.
+
+
+7. DÉPENDANCES ET BIBLIOTHÈQUES
+-------------------------------
+
+Dépendances directes importantes
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+fastapi==0.141.1
+  Framework de création de l'API.
+
+uvicorn==0.52.3
+  Serveur ASGI lançant FastAPI.
+
+gradio==6.24.0
+  Construction de l'interface web et du composant audio.
+
+faster-whisper==1.2.1
+  Transcription vocale locale.
+
+ctranslate2==4.8.1
+  Moteur d'inférence optimisé utilisé par Faster-Whisper.
+
+pydantic==2.13.4
+  Modèles, contraintes et validation des entrées/sorties.
+
+httpx==0.28.1
+  Requêtes frontend-backend et backend-Ollama.
+
+python-multipart==0.0.32
+  Gestion des uploads multipart dans FastAPI.
+
+python-dotenv==1.2.3
+  Chargement potentiel de variables depuis un fichier .env.
+
+numpy==2.5.2
+  Calcul numérique requis par la pile audio/IA.
+
+av==18.1.0
+  Décodage et traitement des conteneurs audio/vidéo.
+
+huggingface_hub==1.27.0
+  Téléchargement et cache du modèle Whisper.
+
+tokenizers==0.23.1
+  Tokenisation des modèles.
+
+onnxruntime==1.29.0
+  Runtime ONNX utilisé dans la pile de traitement.
+
+Dépendances complètes figées dans requirements.txt
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.14.2
+av==18.1.0
+certifi==2026.7.22
+click==8.4.2
+ctranslate2==4.8.1
+fastapi==0.141.1
+faster-whisper==1.2.1
+filelock==3.32.3
+flatbuffers==25.12.19
+fsspec==2026.7.0
+gradio==6.24.0
+h11==0.16.0
+hf-xet==1.6.0
+httpcore==1.0.9
+httpx==0.28.1
+huggingface_hub==1.27.0
+idna==3.19
+numpy==2.5.2
+onnxruntime==1.29.0
+packaging==26.3
+protobuf==7.35.1
+pydantic==2.13.4
+pydantic_core==2.46.4
+python-dotenv==1.2.3
+python-multipart==0.0.32
+PyYAML==6.0.3
+setuptools==84.0.0
+starlette==1.6.0
+tokenizers==0.23.1
+tqdm==4.70.0
+typing-inspection==0.4.4
+typing_extensions==4.16.0
+uvicorn==0.52.3
+
+Dépendance de développement
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+pytest>=8.0,<10.0
+  Runner de tests alternatif. Les tests peuvent aussi être exécutés directement
+  avec unittest, qui fait partie de la bibliothèque standard Python.
+
+Autres modules de la bibliothèque standard employés
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+os, pathlib, tempfile, logging, time/perf_counter, functools/lru_cache,
+datetime, re, unicodedata, difflib/SequenceMatcher et typing.
+
+
+8. SÉCURITÉ, ROBUSTESSE ET PRÉVENTION DES HALLUCINATIONS
+--------------------------------------------------------
+
+Mesures déjà implémentées :
+
+- liste blanche des extensions audio ;
+- limite d'upload configurable ;
+- lecture par blocs de 1 Mio ;
+- rejet des fichiers sans nom et des fichiers vides ;
+- stockage temporaire, avec nettoyage même après une erreur ;
+- contrat d'entrée limité à 20 000 caractères ;
+- validation Pydantic de toutes les réponses publiques ;
+- bornes 0..1 sur les probabilités/confiances ;
+- température Qwen à zéro ;
+- JSON Schema imposé à Ollama ;
+- prompt interdisant l'invention ;
+- vérification des valeurs critiques dans la transcription ;
+- valeurs inconnues conservées à null ;
+- correction des noms/lieux proposée mais jamais appliquée en silence ;
+- repli automatique vers une méthode locale déterministe ;
+- messages HTTP distincts pour les principales erreurs.
+
+
+9. ÉTAT DES TESTS AU 20 AOÛT 2026
+---------------------------------
+
+Commande exécutée :
+
+  .venv/bin/python -m unittest discover -s tests -v
+
+Résultat vérifié :
+
+  Ran 23 tests in 1.408s
+  OK
+
+Les 23 tests ont réussi. Le message de repli Ollama pendant le test correspondant
+est attendu et confirme le comportement de secours.
+
+
+10. COMMANDES D'INSTALLATION ET DE LANCEMENT
+--------------------------------------------
+
+Installation initiale :
+
+  cd /home/komelan01/econstat-ai
+  python3 -m venv .venv
+  source .venv/bin/activate
+  python -m pip install -r requirements.txt
+
+Backend, terminal 1 :
+
+  cd /home/komelan01/econstat-ai
+  source .venv/bin/activate
+  uvicorn backend.app.main:app --reload
+
+Frontend, terminal 2 :
+
+  cd /home/komelan01/econstat-ai
+  source .venv/bin/activate
+  python -m frontend.app
+
+Ollama facultatif, terminal 3 :
+
+  cd /home/komelan01/econstat-ai
+  ./scripts/start_ollama.sh
+
+Téléchargement initial du modèle Ollama :
+
+  cd /home/komelan01/econstat-ai
+  OLLAMA_HOST=127.0.0.1:11434 .tools/ollama/bin/ollama pull qwen2.5:1.5b
+
+Adresses :
+- interface : http://127.0.0.1:7860
+- API : http://127.0.0.1:8000
+- Swagger : http://127.0.0.1:8000/docs
+- Ollama : http://127.0.0.1:11434
+
+
+11. CE QUI A ÉTÉ IMPLÉMENTÉ
+----------------------------
+
+- API FastAPI et contrôle de santé ;
+- interface Gradio en français ;
+- microphone et import de fichiers ;
+- upload audio sécurisé et limité ;
+- cinq formats audio acceptés ;
+- stockage et suppression temporaires ;
+- transcription locale française avec Faster-Whisper ;
+- modèle chargé paresseusement et mis en cache ;
+- VAD et segments horodatés ;
+- métadonnées de langue, probabilité et durée ;
+- lexiques de noms et lieux ivoiriens ;
+- extraction rapide et déterministe ;
+- extraction approfondie locale avec Qwen/Ollama ;
+- sortie Qwen contrainte par JSON Schema ;
+- méthode hybride limitant les hallucinations ;
+- repli automatique quand Ollama est indisponible ;
+- modèle E-Constat structuré et validé ;
+- extraction de l'assuré, du véhicule, du sinistre et des dégâts ;
+- détection des informations critiques absentes ;
+- génération de questions de suivi ;
+- suggestions prudentes de correction ;
+- mesure du temps d'extraction ;
+- gestion des principales erreurs dans l'API et l'interface ;
+- configuration par variables d'environnement ;
+- script local de démarrage d'Ollama ;
+- prompt et configuration de modèle versionnés ;
+- suite de 23 tests actuellement réussie.
+
+
+12. LIMITES ACTUELLES ET TRAVAUX RESTANTS
+-----------------------------------------
+
+Le projet reste un POC. Les éléments suivants ne sont pas encore implémentés :
+
+- base de données ;
+- persistance et historique des constats ;
+- comptes, authentification et autorisations ;
+- chiffrement applicatif des dossiers ;
+- véritable appel continu et transcription en streaming ;
+- diarisation ou identification des locuteurs ;
+- dialogue vocal automatique multi-tours ;
+- ajout/analyse de photographies des véhicules ;
+- géolocalisation ;
+- signature électronique ;
+- génération d'un PDF de constat officiel ;
+- envoi à une compagnie d'assurance ;
+- tableau de bord de gestion ;
+- déploiement et durcissement production ;
+- score global de confiance réellement calculé ;
+- prise en charge complète de toutes les formulations françaises ;
+- vérification sémantique complète des dates/heures proposées par le LLM.
+
+Le README indique également que le streaming continu, l'extraction LLM et la
+diarisation « viendront plus tard ». Dans le code actuel, l'extraction LLM a
+déjà été ajoutée sous forme facultative et hybride ; le streaming et la
+diarisation restent absents.
+
+
+13. CONCLUSION
+--------------
+
+Le cœur fonctionnel est opérationnel : audio -> transcription -> extraction
+structurée -> contrôle de complétude -> questions. L'architecture est modulaire,
+locale et testée. La priorité donnée aux valeurs explicites, à la validation et
+au repli déterministe rend le prototype prudent face aux hallucinations.
+
+Pour passer à une application exploitable, les prochaines grandes étapes sont
+la persistance en base de données, l'authentification, le dialogue multi-tours,
+la production d'un constat final et la sécurisation d'un déploiement réel.
+

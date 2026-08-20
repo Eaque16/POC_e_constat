@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=E-Constat IA — Démarrer / Arrêter
+Comment=Démarrer ou arrêter la démonstration Docker E-Constat IA
+Exec=/home/komelan01/econstat-ai/scripts/toggle_demo_docker.sh
+Icon=applications-system
+Terminal=true
+Categories=Utility;
+StartupNotify=true

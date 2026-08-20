@@ -1,0 +1,15 @@
+.git
+.gitignore
+.venv
+.tools
+.pytest_cache
+**/__pycache__
+**/*.py[cod]
+.env
+.vscode
+.idea
+tests
+scripts
+data/audio_samples
+RAPPORT_TECHNIQUE_ECONSTAT_IA.txt
+ARCHITECTURE_ET_CHOIX_TECHNIQUES_ECONSTAT_IA.txt

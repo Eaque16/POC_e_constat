@@ -1,0 +1,611 @@
+ARCHITECTURE ET CHOIX TECHNIQUES — E-CONSTAT IA
+================================================
+
+Date : 20 août 2026
+Projet : /home/komelan01/econstat-ai
+
+
+1. VISION GÉNÉRALE
+------------------
+
+E-Constat IA est un prototype local de déclaration vocale de sinistre
+automobile. L'utilisateur raconte l'accident au microphone ou importe un
+fichier audio. L'application transforme ensuite ce récit en informations
+structurées correspondant à un constat.
+
+Chaîne de traitement :
+
+  Utilisateur
+      |
+      v
+  Interface Gradio
+      |
+      v
+  API FastAPI
+      |
+      +--> Faster-Whisper --> transcription française
+      |
+      +--> Extracteur déterministe ou Qwen/Ollama
+      |        |
+      |        v
+      |    E-Constat JSON
+      |
+      +--> Contrôle des champs manquants
+      |
+      +--> Suggestions de correction
+      |
+      v
+  Résultat affiché dans l'interface
+
+Le projet privilégie trois objectifs :
+
+- fonctionner localement ;
+- ne pas inventer les données sensibles ;
+- rester utilisable lorsque le modèle de langage est indisponible.
+
+
+2. ARCHITECTURE DES DOSSIERS
+----------------------------
+
+econstat-ai/
+|
++-- frontend/
+|   +-- app.py
+|       Interface web Gradio et appels HTTP vers le backend.
+|
++-- backend/app/
+|   +-- main.py
+|   |   Création de l'application FastAPI.
+|   |
+|   +-- api/
+|   |   +-- transcription.py
+|   |   |   Réception, contrôle et transcription des fichiers audio.
+|   |   +-- claims.py
+|   |       Transformation du texte en constat structuré.
+|   |
+|   +-- schemas/
+|   |   +-- transcription.py
+|   |   |   Structure de la réponse de transcription.
+|   |   +-- claim.py
+|   |   |   Structure centrale de l'E-Constat.
+|   |   +-- extraction.py
+|   |       Requêtes, réponses et suggestions de correction.
+|   |
+|   +-- services/
+|       +-- transcription.py
+|       |   Exécution locale de Faster-Whisper.
+|       +-- extraction.py
+|       |   Extraction rapide avec règles Python.
+|       +-- ollama_client.py
+|       |   Extraction approfondie avec Qwen/Ollama.
+|       +-- claim_questions.py
+|       |   Détection des champs manquants et questions.
+|       +-- domain_lexicon.py
+|           Adaptation aux noms et lieux ivoiriens.
+|
++-- ai/
+|   +-- prompts/claim_extraction_fr.txt
+|   |   Instructions envoyées au modèle de langage.
+|   +-- models/qwen2.5-1.5b.Modelfile
+|       Configuration locale du modèle Qwen.
+|
++-- data/
+|   +-- reference/
+|       +-- ivorian_names.txt
+|       +-- ivory_coast_places.txt
+|           Lexiques de noms et de lieux.
+|
++-- scripts/
+|   +-- start_ollama.sh
+|   |   Démarrage d'Ollama avec la configuration locale.
+|   +-- test_transcription.py
+|       Essai manuel de la transcription.
+|
++-- tests/unit/
+|   Tests automatisés du backend, du frontend et des services.
+|
++-- requirements.txt
++-- requirements-dev.txt
++-- .env.example
++-- README.md
+
+
+3. ARCHITECTURE EN COUCHES
+--------------------------
+
+Couche de présentation
+~~~~~~~~~~~~~~~~~~~~~~
+
+Technologie : Gradio
+Fichier principal : frontend/app.py
+
+Responsabilités :
+
+- capturer ou importer un fichier audio ;
+- envoyer l'audio au backend ;
+- afficher la transcription et ses métadonnées ;
+- demander une extraction simple ou approfondie ;
+- afficher le JSON du constat ;
+- afficher les informations manquantes et les questions.
+
+Pourquoi Gradio ?
+
+Gradio permet de construire rapidement une interface adaptée à une démonstration
+d'intelligence artificielle. Il fournit directement les composants audio,
+boutons, zones de texte et affichage JSON. Pour un POC, ce choix réduit fortement
+le temps de développement par rapport à un frontend séparé en React, Angular ou
+Vue. Sa limite est qu'il offre moins de contrôle qu'un frontend web complet pour
+une future application de production.
+
+
+Couche API
+~~~~~~~~~~
+
+Technologie : FastAPI
+Fichiers : backend/app/main.py et backend/app/api/*.py
+
+Responsabilités :
+
+- exposer les fonctions sous forme d'endpoints HTTP ;
+- valider les entrées et les sorties ;
+- contrôler les fichiers envoyés ;
+- appeler les services métier ;
+- retourner des erreurs HTTP compréhensibles.
+
+Pourquoi FastAPI ?
+
+FastAPI est adapté aux API Python modernes. Il s'intègre directement à
+Pydantic, génère une documentation Swagger, prend en charge l'asynchrone et
+permet de déclarer clairement les contrats de données. Comme les modèles IA
+sont déjà appelés depuis Python, ce choix évite de multiplier les langages et
+les services.
+
+
+Couche de validation
+~~~~~~~~~~~~~~~~~~~~
+
+Technologie : Pydantic
+Fichiers : backend/app/schemas/*.py
+
+Responsabilités :
+
+- définir précisément la structure de l'E-Constat ;
+- contrôler les données reçues et retournées ;
+- empêcher des probabilités hors de l'intervalle 0 à 1 ;
+- limiter une transcription à 20 000 caractères ;
+- valider le JSON produit par Qwen.
+
+Pourquoi Pydantic ?
+
+Un modèle de langage peut retourner une réponse incomplète ou mal formée.
+Pydantic impose une structure avant que les données soient utilisées. Il sert
+donc à la fois de documentation, de contrat d'API et de barrière de sécurité.
+
+
+Couche métier
+~~~~~~~~~~~~~
+
+Fichiers : backend/app/services/*.py
+
+Cette couche contient la transcription, l'extraction, les règles de complétude,
+le client Ollama et les lexiques. La séparer des routes HTTP permet de tester la
+logique sans lancer un serveur et de remplacer plus facilement une technologie.
+
+
+4. MODÈLE DE TRANSCRIPTION : FASTER-WHISPER
+-------------------------------------------
+
+Modèle par défaut : Whisper « small »
+Bibliothèque : faster-whisper 1.2.1
+Moteur : CTranslate2 4.8.1
+Matériel par défaut : CPU
+Type de calcul : int8
+Langue : français
+
+Rôle :
+
+Faster-Whisper transforme le fichier audio en texte. Il retourne également :
+
+- la langue détectée ;
+- la probabilité associée à la langue ;
+- la durée de l'audio ;
+- des segments avec début, fin et texte.
+
+Pourquoi Whisper ?
+
+Whisper est adapté à la reconnaissance vocale multilingue et peut traiter le
+français. Son exécution locale protège mieux les récits de sinistres qu'un envoi
+automatique vers une API distante.
+
+Pourquoi Faster-Whisper ?
+
+Faster-Whisper utilise CTranslate2 pour réduire le temps d'inférence et la
+consommation de mémoire par rapport à l'implémentation Whisper Python classique.
+Cela rend le POC plus réaliste sur une machine sans GPU puissant.
+
+Pourquoi le modèle « small » ?
+
+Le modèle small représente un compromis entre qualité, vitesse, mémoire et
+temps de téléchargement. Un modèle plus petit serait plus rapide mais moins
+précis. Un modèle medium ou large pourrait améliorer certains récits, mais
+demanderait davantage de mémoire et de calcul.
+
+Pourquoi CPU et int8 ?
+
+Le mode CPU rend la démonstration utilisable sans carte graphique CUDA. La
+quantification int8 diminue la mémoire et accélère généralement l'inférence CPU,
+avec un compromis limité sur la précision.
+
+Réglages importants :
+
+- beam_size=3 : compromis entre recherche et vitesse ;
+- vad_filter=True : ignore davantage les silences ;
+- condition_on_previous_text=False : réduit les répétitions entre segments ;
+- hotwords : aide à reconnaître les noms et lieux du domaine ;
+- max_new_tokens=128 : évite de dépasser les 448 positions du décodeur.
+
+Le vocabulaire ivoirien est transmis uniquement comme hotwords. Il n'est plus
+dupliqué dans initial_prompt, car l'utilisation simultanée des deux mécanismes
+pouvait produire 450 tokens de prompt et dépasser la limite de 448 du modèle.
+
+
+5. MODÈLE DE LANGAGE : QWEN 2.5 1.5B
+-------------------------------------
+
+Modèle : qwen2.5:1.5b
+Exécution : Ollama local
+Format disponible localement : GGUF
+Quantification : Q4_K_M
+Température : 0
+Contexte configuré par l'application : 2048 tokens
+Nombre maximal de tokens produits : 256
+
+Rôle :
+
+Qwen analyse la transcription et propose une structure contenant :
+
+- identité de l'assuré ;
+- téléphone et contrat ;
+- immatriculation, marque et modèle ;
+- type, date, heure et lieu du sinistre ;
+- dégâts mentionnés.
+
+Pourquoi Qwen 2.5 1.5B ?
+
+Ce petit modèle peut fonctionner localement avec des ressources matérielles
+modérées. Il est suffisamment capable pour une tâche d'extraction structurée
+simple, tout en étant beaucoup plus léger qu'un grand modèle distant ou qu'un
+modèle local de plusieurs dizaines de milliards de paramètres.
+
+Pourquoi Ollama ?
+
+Ollama simplifie le chargement, le stockage et l'appel HTTP d'un modèle local.
+Le backend peut l'utiliser comme un service indépendant sur le port 11434. Cela
+permet aussi au projet de continuer à fonctionner si Ollama est arrêté.
+
+Pourquoi GGUF Q4_K_M ?
+
+GGUF est un format courant pour l'inférence locale. La quantification Q4_K_M
+réduit fortement la taille du modèle et ses besoins en mémoire. Le compromis est
+une légère perte potentielle de précision par rapport à un modèle non quantifié.
+
+Pourquoi temperature=0 ?
+
+L'objectif n'est pas de produire un texte créatif, mais d'extraire des faits.
+Une température nulle rend les réponses plus stables et réduit la variation.
+
+Pourquoi Qwen est-il facultatif ?
+
+Un LLM local peut être lent, indisponible ou retourner une donnée incorrecte.
+Le mode rapide fonctionne donc sans lui. L'utilisateur active Qwen uniquement
+pour une analyse plus souple de formulations complexes.
+
+
+6. EXTRACTION DÉTERMINISTE
+--------------------------
+
+Fichier : backend/app/services/extraction.py
+
+Ce composant n'est pas un modèle d'apprentissage automatique. Il utilise des
+expressions régulières et des règles Python pour extraire les informations
+explicitement présentes.
+
+Informations reconnues :
+
+- prénom et nom ;
+- téléphone ;
+- contrat ou police ;
+- immatriculation ;
+- date explicite, « aujourd'hui » ou « hier » ;
+- heure ;
+- lieu ;
+- collision, vol ou incendie ;
+- aile, capot, pare-chocs, phare, porte, portière, rétroviseur et vitre.
+
+Pourquoi conserver un extracteur déterministe ?
+
+- il répond rapidement ;
+- il fonctionne sans Ollama ;
+- son comportement est explicable ;
+- il évite d'inventer une information absente ;
+- il fournit une solution de repli automatique.
+
+Sa limite est qu'une expression imprévue peut ne pas être reconnue. C'est la
+raison du mode hybride avec Qwen.
+
+
+7. STRATÉGIE HYBRIDE ET PRÉVENTION DES HALLUCINATIONS
+-----------------------------------------------------
+
+Le système ne fait pas confiance aveuglément au modèle Qwen. La procédure est :
+
+1) exécuter d'abord les règles déterministes ;
+2) demander à Qwen une sortie conforme à un JSON Schema ;
+3) valider la réponse avec Pydantic ;
+4) vérifier que les valeurs critiques proposées apparaissent dans le récit ;
+5) rejeter les données non justifiées ;
+6) fusionner les propositions sûres avec le résultat déterministe ;
+7) revenir entièrement au mode déterministe si Ollama échoue.
+
+Les types de sinistre sont limités à collision, vol et incendie. Un dégât
+proposé par Qwen est conservé seulement si le texte correspondant est présent
+dans la transcription. Les dates et heures restent déterministes car leur
+validation sémantique complète en français n'est pas encore implémentée.
+
+Pourquoi cette approche ?
+
+Les noms, numéros de contrat, plaques et lieux sont des données sensibles. Une
+information inventée pourrait rendre un constat incorrect. La combinaison de
+règles, validation de schéma et preuve dans le texte réduit ce risque.
+
+
+8. ADAPTATION À LA CÔTE D'IVOIRE
+--------------------------------
+
+Fichiers :
+
+- data/reference/ivorian_names.txt ;
+- data/reference/ivory_coast_places.txt ;
+- backend/app/services/domain_lexicon.py.
+
+Ces lexiques aident la reconnaissance des noms propres et des lieux ivoiriens.
+Le service normalise les accents et la ponctuation, puis utilise
+SequenceMatcher pour trouver une orthographe proche.
+
+Seuils actuels :
+
+- 0,74 pour un lieu ;
+- 0,82 pour un nom ou prénom.
+
+Pourquoi proposer au lieu de corriger automatiquement ?
+
+Une correction automatique d'un nom ou d'un lieu peut modifier juridiquement
+le contenu d'une déclaration. Le projet affiche donc une question de
+confirmation, par exemple « Le lieu est-il bien Abidjan ? ».
+
+
+9. MODÈLE DE DONNÉES E-CONSTAT
+------------------------------
+
+Structure principale :
+
+EConstat
+|
++-- assure
+|   +-- nom
+|   +-- prenom
+|   +-- telephone
+|   +-- numero_contrat
+|
++-- vehicule
+|   +-- immatriculation
+|   +-- marque
+|   +-- modele
+|
++-- sinistre
+|   +-- type_sinistre
+|   +-- date_sinistre
+|   +-- heure_sinistre
+|   +-- lieu
+|   +-- description
+|   +-- degats[]
+|
++-- transcription
++-- informations_manquantes[]
++-- confidence
+
+Pourquoi JSON et Pydantic ?
+
+Le JSON est facilement transmis par une API, affiché dans le frontend, stocké
+plus tard en base de données ou transformé en document. Pydantic garantit que
+ce JSON respecte la structure attendue. Les données inconnues restent nulles,
+ce qui distingue clairement « absent » d'une valeur supposée.
+
+
+10. QUESTIONS COMPLÉMENTAIRES
+-----------------------------
+
+Le service claim_questions.py considère comme critiques :
+
+- prénom ;
+- nom ;
+- numéro de contrat ;
+- immatriculation ;
+- date ;
+- lieu ;
+- type de sinistre.
+
+Une question courte est associée à chaque champ absent.
+
+Pourquoi cette étape ?
+
+Une déclaration orale est souvent incomplète. Au lieu d'inventer ou de rejeter
+tout le récit, l'application identifie exactement ce qu'il reste à demander.
+Cette logique prépare une future conversation guidée multi-tours.
+
+
+11. GESTION DES FICHIERS AUDIO
+------------------------------
+
+Formats acceptés : WAV, MP3, M4A, OGG et WebM.
+Taille maximale par défaut : 25 Mio.
+Lecture : blocs de 1 Mio.
+
+Le backend :
+
+- vérifie le nom et l'extension ;
+- refuse les formats interdits ;
+- refuse les fichiers vides ;
+- arrête l'upload si la limite est dépassée ;
+- utilise un fichier temporaire ;
+- supprime ce fichier même lorsqu'une erreur survient.
+
+Pourquoi un stockage temporaire ?
+
+Faster-Whisper travaille simplement avec un chemin local. Le fichier temporaire
+permet ce traitement sans conserver durablement le récit audio sur le serveur.
+
+
+12. BIBLIOTHÈQUES PRINCIPALES
+-----------------------------
+
+fastapi
+  API HTTP, routes et gestion des requêtes.
+
+uvicorn
+  Serveur ASGI exécutant FastAPI.
+
+gradio
+  Interface web rapide pour la démonstration IA.
+
+faster-whisper
+  Reconnaissance vocale locale.
+
+ctranslate2
+  Moteur optimisé derrière Faster-Whisper.
+
+pydantic
+  Modèles et validation des données.
+
+httpx
+  Communication entre frontend, backend et Ollama.
+
+python-multipart
+  Réception des fichiers audio multipart.
+
+huggingface_hub
+  Téléchargement et cache du modèle Whisper.
+
+av
+  Décodage des formats audio.
+
+numpy
+  Calcul numérique utilisé par la pile IA/audio.
+
+pytest et unittest
+  Vérification automatisée du comportement.
+
+
+13. SERVICES ET PORTS
+---------------------
+
+Interface Gradio :
+  http://127.0.0.1:7860
+
+Backend FastAPI :
+  http://127.0.0.1:8000
+
+Documentation Swagger :
+  http://127.0.0.1:8000/docs
+
+Ollama :
+  http://127.0.0.1:11434
+
+Endpoints principaux :
+
+- GET / ;
+- GET /health ;
+- POST /audio/transcribe ;
+- POST /claims/extract.
+
+
+14. TESTS ET FIABILITÉ
+----------------------
+
+La suite vérifie notamment :
+
+- validation des extensions et fichiers ;
+- limite de taille et suppression temporaire ;
+- résultat structuré de transcription ;
+- limite des tokens Whisper ;
+- absence de duplication entre hotwords et initial_prompt ;
+- extraction sans invention ;
+- dates et lieux ;
+- repli lorsque Ollama est indisponible ;
+- prompt anti-invention ;
+- validation de la réponse Qwen ;
+- fonctionnement du frontend.
+
+Dernier état vérifié : 25 tests réussis.
+
+
+15. AVANTAGES DES CHOIX ACTUELS
+-------------------------------
+
+- fonctionnement principalement local ;
+- confidentialité supérieure à une architecture entièrement cloud ;
+- coûts d'API externes évités ;
+- fonctionnement possible sans GPU ;
+- interface rapide à utiliser ;
+- architecture modulaire ;
+- sortie structurée et validée ;
+- comportement de secours automatique ;
+- prudence sur les données sensibles ;
+- adaptation initiale au contexte ivoirien ;
+- tests couvrant les principaux chemins.
+
+
+16. LIMITES ET ÉVOLUTIONS POSSIBLES
+-----------------------------------
+
+Le projet reste un POC. Il manque notamment :
+
+- une base de données ;
+- des comptes utilisateurs et rôles ;
+- la sauvegarde des dossiers ;
+- le streaming audio réel ;
+- la séparation des locuteurs ;
+- une conversation guidée multi-tours ;
+- la gestion des photographies ;
+- la géolocalisation ;
+- la signature électronique ;
+- la génération du PDF officiel ;
+- la transmission à une assurance ;
+- le chiffrement et le durcissement production ;
+- un calcul complet de confiance ;
+- une couverture linguistique plus étendue.
+
+Évolutions possibles des modèles :
+
+- passer de Whisper small à medium si le matériel le permet ;
+- utiliser une accélération GPU si disponible ;
+- enrichir prudemment les lexiques ivoiriens ;
+- comparer Qwen 1.5B avec un modèle local plus puissant ;
+- mesurer la précision sur un jeu de récits réels anonymisés ;
+- ajouter une validation métier spécialisée pour les dates, plaques et contrats.
+
+
+17. CONCLUSION
+--------------
+
+L'architecture combine un frontend simple, une API structurée, une
+transcription locale et deux méthodes complémentaires d'extraction. Faster-
+Whisper a été choisi pour la reconnaissance vocale efficace, Qwen/Ollama pour
+l'analyse locale plus souple, et les règles déterministes pour garantir vitesse,
+explicabilité et continuité de service.
+
+Le choix le plus important est la stratégie hybride : le modèle de langage aide
+à comprendre le récit, mais les règles Python et Pydantic gardent le contrôle
+des données finales. Cette approche est adaptée à un domaine où une information
+inventée peut avoir des conséquences administratives ou juridiques.
+
