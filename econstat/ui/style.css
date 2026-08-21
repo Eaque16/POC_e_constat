@@ -1,0 +1,88 @@
+:root {
+  --asaci-orange: #f15a24;
+  --asaci-orange-dark: #c94112;
+  --asaci-ink: #202833;
+  --asaci-muted: #667085;
+  --asaci-border: #e4e7ec;
+  --asaci-soft: #fff7f2;
+}
+
+.gradio-container {
+  max-width: 1440px !important;
+  margin: 0 auto !important;
+  background: #f7f8fa !important;
+  color: var(--asaci-ink) !important;
+  font-family: Inter, "Segoe UI", sans-serif !important;
+}
+
+#asaci-header {
+  align-items: center;
+  padding: 18px 24px;
+  margin-bottom: 18px;
+  border: 1px solid var(--asaci-border);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 8px 30px rgba(32, 40, 51, 0.07);
+}
+
+#asaci-logo {
+  border: 0 !important;
+  background: transparent !important;
+}
+
+#asaci-logo img {
+  object-fit: contain !important;
+  max-height: 90px !important;
+}
+
+#hero-copy h1 {
+  margin: 0 0 6px;
+  color: var(--asaci-ink);
+  font-size: clamp(1.7rem, 3vw, 2.6rem);
+  letter-spacing: -0.04em;
+}
+
+#hero-copy p { margin: 0; color: var(--asaci-muted); }
+
+#live-badge {
+  padding: 10px 14px;
+  border: 1px solid #fed7c3;
+  border-radius: 12px;
+  background: var(--asaci-soft);
+  color: var(--asaci-orange-dark);
+  font-weight: 700;
+}
+
+.primary {
+  border-color: var(--asaci-orange) !important;
+  background: var(--asaci-orange) !important;
+}
+
+.primary:hover { background: var(--asaci-orange-dark) !important; }
+
+.tab-nav {
+  padding: 5px !important;
+  border: 1px solid var(--asaci-border) !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+}
+
+.tab-nav button.selected {
+  border-bottom-color: var(--asaci-orange) !important;
+  color: var(--asaci-orange-dark) !important;
+}
+
+.form, .panel {
+  border-color: var(--asaci-border) !important;
+  border-radius: 14px !important;
+  background: #fff !important;
+}
+
+#live-table { min-height: 350px; }
+
+footer { display: none !important; }
+
+@media (max-width: 768px) {
+  #asaci-header { padding: 14px; }
+  .gradio-container { padding: 10px !important; }
+}

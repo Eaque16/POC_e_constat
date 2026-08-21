@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    environment:
+      POSTGRES_DB: econstat
+      POSTGRES_USER: econstat
+      POSTGRES_PASSWORD: econstat
+    ports: ["5432:5432"]
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U econstat"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  mock-econsta:
+    build: .
+    command: uvicorn econstat.mock_server:app --host 0.0.0.0 --port 8001
+    ports: ["8001:8001"]
+volumes:
+  postgres_data:

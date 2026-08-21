@@ -1,0 +1,22 @@
+# Export reproductible correspondant à pyproject.toml (runtime + dev, Python 3.11).
+alembic==1.13.2
+bcrypt==4.0.1
+coverage==7.6.1
+fastapi==0.112.2
+gradio==4.44.0
+httpx==0.27.2
+jinja2==3.1.4
+numpy==1.26.4
+passlib==1.7.4
+psycopg[binary]==3.2.1
+pydantic==2.8.2
+pydantic-settings==2.4.0
+pyjwt==2.9.0
+pytest==8.3.2
+pytest-asyncio==0.24.0
+python-multipart==0.0.9
+rapidfuzz==3.9.6
+reportlab==4.2.2
+ruff==0.6.3
+sqlalchemy==2.0.32
+uvicorn[standard]==0.30.6
