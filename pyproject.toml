@@ -35,7 +35,6 @@ ai = [
   "pyannote.audio==3.3.2",
   "torch==2.4.1",
   "torchaudio==2.4.1",
-  "transformers==4.44.2",
 ]
 dev = [
   "coverage==7.6.1",
