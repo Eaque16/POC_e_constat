@@ -92,6 +92,16 @@ est indexé par chemin résolu, device et compute type. Il vérifie les fichiers
 avant import/chargement et ne transforme jamais un chemin manquant en téléchargement implicite.
 Les segments et la trace opérationnelle sont persistés avant le checkpoint `diarizing`.
 
+## Diarisation et attribution des rôles
+
+`Diarizer` encapsule pyannote et retourne toujours un résultat structuré. Un token absent, un modèle
+local incomplet, une licence inaccessible ou une erreur runtime produit un fallback audité plutôt
+qu’une exception globale. Le cache du pipeline est séparé du cache Whisper.
+
+`role_assignment` transforme les identifiants anonymes de locuteurs en rôles métier par une
+heuristique explicitement tracée. Un segment sans chevauchement reste `INCONNU`. L’API de correction
+humaine modifie les segments et reconstruit le transcript, avec contrôle propriétaire et audit.
+
 ## Modèle persistant
 
 - `User` porte l’identité et le rôle.

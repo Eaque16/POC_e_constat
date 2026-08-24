@@ -138,8 +138,18 @@ async def test_pipeline_persists_each_checkpoint_with_explicit_diarization_fallb
         def __init__(self, _settings):
             pass
 
-        def diarize(self, _audio):
-            raise RuntimeError("token absent")
+        def run(self, _audio):
+            return SimpleNamespace(
+                turns=[],
+                available=False,
+                trace=lambda: {
+                    "status": "fallback",
+                    "reason": "hf_token_missing",
+                    "model_source": "synthetic",
+                    "elapsed_seconds": 0.0,
+                    "turns": 0,
+                },
+            )
 
     class FakeExtractor:
         def __init__(self, _settings):
@@ -190,6 +200,7 @@ async def test_pipeline_persists_each_checkpoint_with_explicit_diarization_fallb
             select(AuditLog).where(AuditLog.action == "diarization_completed")
         )
         assert diarization_audit.details_json["fallback_unknown"] is True
+        assert diarization_audit.details_json["reason"] == "hf_token_missing"
         transcription_audit = db.scalar(
             select(AuditLog).where(AuditLog.action == "transcription_completed")
         )

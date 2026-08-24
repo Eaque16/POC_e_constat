@@ -23,8 +23,12 @@ from econstat.models import (
     ProcessingProfile,
     User,
 )
-from econstat.schemas.call import CallUploadResponse
-from econstat.schemas.claim import ClaimData
+from econstat.schemas.call import (
+    CallUploadResponse,
+    SpeakerCorrectionsRequest,
+    SpeakerCorrectionsResponse,
+)
+from econstat.schemas.claim import ClaimData, TranscriptSegment
 from econstat.schemas.job import JobResponse
 from econstat.services.audio_validation import AudioValidationError, validate_and_store_audio
 from econstat.services.econsta import EConstaClient
@@ -191,6 +195,52 @@ def process_call_audio(
     if job is None:
         raise HTTPException(409, "Aucun job associé à cet appel.")
     return job
+
+
+@router.put("/calls/{call_id}/speakers", response_model=SpeakerCorrectionsResponse)
+def correct_speaker_roles(
+    call_id: str,
+    body: SpeakerCorrectionsRequest,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    call = get_owned_call_or_404(call_id, user, db)
+    active_job = db.scalar(
+        select(ProcessingJob)
+        .where(ProcessingJob.call_id == call.id)
+        .order_by(ProcessingJob.updated_at.desc())
+    )
+    if active_job is not None and active_job.status != ProcessingJobStatus.ready_for_review:
+        raise HTTPException(409, "Les rôles ne peuvent être corrigés qu’après le traitement.")
+    segments = [TranscriptSegment.model_validate(item) for item in call.segments_json]
+    indexes = [correction.segment_index for correction in body.corrections]
+    if len(indexes) != len(set(indexes)):
+        raise HTTPException(422, "Un segment ne peut être corrigé qu’une fois par requête.")
+    if not segments or any(index >= len(segments) for index in indexes):
+        raise HTTPException(422, "Indice de segment invalide.")
+    for correction in body.corrections:
+        segments[correction.segment_index] = segments[correction.segment_index].model_copy(
+            update={"speaker": correction.speaker}
+        )
+    call.segments_json = [segment.model_dump(mode="json") for segment in segments]
+    call.transcript_text = "\n".join(
+        f"{segment.speaker}: {segment.text}" for segment in segments
+    )
+    db.add(
+        AuditLog(
+            user_id=user.id,
+            action="speaker_roles_corrected",
+            entity_type="call",
+            entity_id=call.id,
+            details_json={"segment_indexes": indexes, "count": len(indexes)},
+        )
+    )
+    db.commit()
+    return SpeakerCorrectionsResponse(
+        call_id=call.id,
+        corrected_segments=len(indexes),
+        segments=segments,
+    )
 
 
 @router.get("/claims")

@@ -13,9 +13,10 @@ from econstat.models import (
 )
 from econstat.schemas.claim import ClaimExtraction, TranscriptSegment
 from econstat.services.audio_validation import validate_stored_audio
-from econstat.services.diarization import Diarizer, align_and_label
+from econstat.services.diarization import Diarizer
 from econstat.services.extraction import HybridExtractor
 from econstat.services.jobs import advance_job, fail_job
+from econstat.services.role_assignment import assign_roles
 from econstat.services.transcription import Transcriber, normalise_logprob
 
 
@@ -23,11 +24,8 @@ async def process_audio(
     audio: Path, settings: Settings
 ) -> tuple[ClaimExtraction, list[TranscriptSegment]]:
     segments = Transcriber(settings).transcribe(audio)
-    try:
-        turns = Diarizer(settings).diarize(audio)
-    except RuntimeError:
-        turns = []
-    labelled = align_and_label(segments, turns)
+    diarization = Diarizer(settings).run(audio)
+    labelled = assign_roles(segments, diarization.turns).segments
     transcript = "\n".join(f"{segment.speaker}: {segment.text}" for segment in labelled)
     whisper_confidence = (
         sum(normalise_logprob(s.avg_logprob) for s in segments) / len(segments) if segments else 0.0
@@ -73,13 +71,9 @@ async def process_processing_job(db: Session, job: ProcessingJob, settings: Sett
 
         if job.status == ProcessingJobStatus.diarizing:
             raw_segments = [TranscriptSegment.model_validate(item) for item in call.segments_json]
-            fallback = False
-            try:
-                turns = Diarizer(settings).diarize(Path(call.audio_path))
-            except RuntimeError:
-                turns = []
-                fallback = True
-            labelled = align_and_label(raw_segments, turns)
+            diarization = Diarizer(settings).run(Path(call.audio_path))
+            assignment = assign_roles(raw_segments, diarization.turns)
+            labelled = assignment.segments
             call.segments_json = [segment.model_dump(mode="json") for segment in labelled]
             call.transcript_text = "\n".join(
                 f"{segment.speaker}: {segment.text}" for segment in labelled
@@ -88,7 +82,12 @@ async def process_processing_job(db: Session, job: ProcessingJob, settings: Sett
                 _audit(
                     job,
                     "diarization_completed",
-                    {"fallback_unknown": fallback, "segments": len(labelled)},
+                    {
+                        **diarization.trace(),
+                        **assignment.trace(),
+                        "fallback_unknown": not diarization.available,
+                        "segments": len(labelled),
+                    },
                 )
             )
             advance_job(db, job, ProcessingJobStatus.extracting)

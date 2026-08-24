@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     whisper_distil_revision: str = "16bd02185bdaa6b00fb4b0deb46e47ac1b754b8e"
     diarization_model: str = "pyannote/speaker-diarization-community-1"
     diarization_revision: str = "main"
+    diarization_num_speakers: int = 2
     ollama_enabled: bool = True
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen3:4b"

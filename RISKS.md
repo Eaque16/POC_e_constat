@@ -3,7 +3,7 @@
 | ID | Risque | Probabilité | Impact | Mitigation | Owner | Statut |
 |---|---|---:|---:|---|---|---|
 | R01 | Traitement CPU lent | Élevée | Élevé | int8, profils, worker, benchmark, aucune promesse temps réel | Lead IA | Ouvert |
-| R02 | pyannote indisponible | Élevée | Moyen | fallback INCONNU, erreur visible, correction humaine | Lead IA | Ouvert |
+| R02 | pyannote indisponible | Élevée | Moyen | fallback INCONNU, cause visible, correction humaine | Lead IA | Mitigé phase 7, capacité partielle |
 | R03 | Téléchargement modèle impossible | Moyenne | Élevé | modèles locaux, téléchargement explicite, hash | Tech Lead | Ouvert |
 | R04 | Hallucination du LLM | Moyenne | Élevé | règles, preuve littérale, score, validation humaine | Lead IA | Ouvert |
 | R05 | Exposition de données sensibles | Moyenne | Critique | Git ignore, stockage local, rétention, données synthétiques | Manager | Ouvert |

@@ -128,3 +128,17 @@ désigne toujours la prochaine étape à exécuter.
 **Conséquences** : l’interface et la documentation doivent toujours afficher cette limite.
 
 **Réversibilité** : une calibration sur corpus annoté pourra remplacer la transformation après mesure.
+
+## ADR-013 — Diarisation non bloquante et rôles heuristiques
+
+**Contexte** : pyannote est gated et ses sorties identifient des locuteurs, pas leurs rôles métier.
+
+**Options** : rendre pyannote obligatoire ; masquer l’échec ; fallback explicite et correction humaine.
+
+**Choix** : résultat structuré, fallback `INCONNU`, heuristique d’accueil tracée et correction par segment.
+
+**Pourquoi** : le dossier reste traitable sans transformer une hypothèse en identité certaine.
+
+**Conséquences** : la qualité de séparation reste partielle tant qu’elle n’est pas mesurée sur corpus.
+
+**Réversibilité** : le moteur et l’heuristique peuvent évoluer derrière leurs contrats actuels.

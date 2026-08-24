@@ -9,8 +9,8 @@ sans dépendance obligatoire à CUDA, Docker, WSL2, Kafka, Redis ou Celery.
 ## État de la reprise
 
 La branche `rebuild/cpu-first` reconstruit progressivement l’ancien POC sans le supprimer avant
-remplacement vérifié. Les phases 0 à 6 couvrent le cadrage, la reproductibilité Windows, le
-diagnostic, le modèle de données, la sécurité API, l’ingestion, les jobs et la transcription CPU. Les fonctions historiques ne sont
+remplacement vérifié. Les phases 0 à 7 couvrent le cadrage, la reproductibilité Windows, le
+diagnostic, les données, la sécurité, l’ingestion, les jobs, la transcription et le fallback de diarisation. Les fonctions historiques ne sont
 considérées livrées dans la nouvelle architecture qu’après leur phase dédiée.
 
 - cœur Python local et 11 tests historiques opérationnels ;
@@ -24,6 +24,7 @@ considérées livrées dans la nouvelle architecture qu’après leur phase déd
 - l’upload contrôle taille, extension, MIME, conteneur, piste et durée avant de créer l’appel.
 - l’upload crée atomiquement un job SQL ; le worker indépendant persiste progression et checkpoints.
 - les profils Whisper `fast` et `quality` utilisent uniquement les modèles CTranslate2 locaux configurés.
+- pyannote est facultatif ; son indisponibilité produit `INCONNU` avec une cause auditée.
 
 ## Architecture cible
 
@@ -163,6 +164,22 @@ explicites :
   --destination models\<nom> --confirm-download
 .\.venv\Scripts\python.exe scripts\hash_models.py models\whisper-tiny
 ```
+
+## Diarisation et rôles
+
+Le worker tente pyannote seulement avec un `models/pyannote/config.yaml` local chargeable, ou lorsque
+`HF_TOKEN` et `ALLOW_MODEL_DOWNLOADS=true` autorisent explicitement l’accès au modèle gated. Chaque
+échec devient un fallback `INCONNU` avec une cause structurée (`hf_token_missing`, modèle local absent
+ou erreur pyannote). Il ne bloque ni l’extraction ni la revue humaine.
+
+L’association `AGENT`/`ASSURE` repose sur une formule d’accueil ou, à défaut, le premier locuteur
+détecté. C’est une heuristique, pas une identification biométrique. L’agent peut corriger les rôles :
+
+```text
+PUT /api/calls/{call_id}/speakers
+```
+
+La correction exige la propriété du dossier et produit un audit sans contenu de transcription.
 
 ## Parcours produit cible
 

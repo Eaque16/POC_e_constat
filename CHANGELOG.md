@@ -27,6 +27,10 @@
   confiance ASR expliquée, trace de latence, diagnostic de complétude et scripts explicites de modèles.
 - Validation réelle phase 6 : `fast` et `quality` exécutés hors réseau sur audio synthétique ; temps
   exploratoires documentés dans `BENCHMARK.md`, 52 tests, sans revendication de précision métier.
+- Phase 7 : pyannote optionnel avec cache et API 3.3 compatible, fallback structuré `INCONNU`,
+  attribution heuristique tracée et correction humaine des rôles avec contrôle propriétaire.
+- Limite phase 7 : vraie diarisation non exécutée, car `HF_TOKEN` et configuration locale chargeable
+  sont absents ; fallback local validé sans panne globale, avec 57 tests réussis.
 
 > Les entrées correspondent aux phases livrées sur la branche `rebuild/cpu-first` avec un commit
 > logique par phase.
