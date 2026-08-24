@@ -1,5 +1,13 @@
 # Changelog
 
+## Phase 9 — Interface agent et revue humaine
+
+- Authentification JWT dans Gradio sans mode de contournement local.
+- Upload fichier/microphone, profils de traitement et suivi explicite des jobs.
+- Revue avec transcription, locuteurs, preuves, confiances et champs manquants.
+- Distinction entre proposition IA, correction courante et valeur validée.
+- Historique agent, dashboard responsable et actions PDF/envoi protégées.
+
 ## 0.2.0 — reprise CPU-first en cours
 
 - Phase 0 : cadrage de l’architecture Windows CPU-first, décisions et registre des risques.

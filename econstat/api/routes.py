@@ -24,11 +24,12 @@ from econstat.models import (
     User,
 )
 from econstat.schemas.call import (
+    CallReviewResponse,
     CallUploadResponse,
     SpeakerCorrectionsRequest,
     SpeakerCorrectionsResponse,
 )
-from econstat.schemas.claim import ClaimData, TranscriptSegment
+from econstat.schemas.claim import ClaimData, ClaimReviewResponse, TranscriptSegment
 from econstat.schemas.job import JobResponse
 from econstat.services.audio_validation import AudioValidationError, validate_and_store_audio
 from econstat.services.econsta import EConstaClient
@@ -45,6 +46,32 @@ class ClaimUpdate(BaseModel):
 
 class TranscriptRequest(BaseModel):
     transcript: str
+
+
+def claim_review_response(claim: Claim) -> ClaimReviewResponse:
+    trace = claim.model_trace_json or {}
+    proposed = trace.get("ai_proposal", claim.data_json or {})
+    return ClaimReviewResponse(
+        id=claim.id,
+        call_id=claim.call_id,
+        status=claim.status.value,
+        proposed_data=proposed,
+        current_data=claim.data_json or {},
+        validated_data=(claim.data_json or {})
+        if claim.status in {ClaimStatus.validated, ClaimStatus.sent}
+        else None,
+        confidence=claim.confidence_json or {},
+        evidence=claim.evidence_json or {},
+        missing_fields=claim.missing_fields_json or [],
+        questions=claim.questions_json or [],
+        global_confidence=claim.global_confidence,
+        human_corrections=claim.human_corrections,
+        validated_by=claim.validated_by,
+        validated_at=claim.validated_at,
+        external_id=claim.external_id,
+        created_at=claim.created_at,
+        updated_at=claim.updated_at,
+    )
 
 
 @router.post("/calls", status_code=201, response_model=CallUploadResponse)
@@ -134,6 +161,21 @@ async def extract_call(
     )
 
 
+@router.get("/calls/{call_id}", response_model=CallReviewResponse)
+def get_call(
+    call_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)
+) -> CallReviewResponse:
+    call = get_owned_call_or_404(call_id, user, db)
+    return CallReviewResponse(
+        id=call.id,
+        duration_seconds=call.duration_seconds,
+        transcript_text=call.transcript_text,
+        segments=[TranscriptSegment.model_validate(item) for item in (call.segments_json or [])],
+        created_at=call.created_at,
+        completed_at=call.completed_at,
+    )
+
+
 @router.post("/calls/{call_id}/transcribe")
 def transcribe_call(
     call_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)
@@ -164,7 +206,7 @@ async def create_demo_call(
         missing_fields=result.missing_fields,
         suggested_questions=result.suggested_questions,
         confidence_score=result.overall_confidence,
-        model_trace=result.trace,
+        model_trace={**result.trace, "ai_proposal": result.data.model_dump(mode="json")},
         status=ClaimStatus.pending_validation,
     )
     db.add(claim)
@@ -244,12 +286,19 @@ def correct_speaker_roles(
     )
 
 
-@router.get("/claims")
+@router.get("/claims", response_model=list[ClaimReviewResponse])
 def list_claims(user: User = Depends(current_user), db: Session = Depends(get_db)):
     stmt = select(Claim).join(Call).order_by(Claim.created_at.desc())
     if user.role.value == "agent":
         stmt = stmt.where(Call.owner_id == user.id)
-    return db.scalars(stmt).all()
+    return [claim_review_response(claim) for claim in db.scalars(stmt).all()]
+
+
+@router.get("/claims/{claim_id}", response_model=ClaimReviewResponse)
+def get_claim(
+    claim_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)
+) -> ClaimReviewResponse:
+    return claim_review_response(get_owned_claim_or_404(claim_id, user, db))
 
 
 @router.put("/claims/{claim_id}")
@@ -260,6 +309,11 @@ def update_claim(
     db: Session = Depends(get_db),
 ):
     claim = get_owned_claim_or_404(claim_id, user, db)
+    if claim.status in {ClaimStatus.validated, ClaimStatus.sent}:
+        raise HTTPException(409, "Une déclaration validée ne peut plus être corrigée.")
+    trace = dict(claim.model_trace_json or {})
+    trace.setdefault("ai_proposal", claim.data_json or {})
+    claim.model_trace_json = trace
     claim.data = body.data.model_dump(mode="json")
     claim.human_edits += 1
     db.add(
@@ -272,7 +326,7 @@ def update_claim(
         )
     )
     db.commit()
-    return claim
+    return claim_review_response(claim)
 
 
 @router.post("/claims/{claim_id}/validate")
@@ -280,6 +334,8 @@ def validate_claim(
     claim_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)
 ):
     claim = get_owned_claim_or_404(claim_id, user, db)
+    if claim.status != ClaimStatus.pending_validation:
+        raise HTTPException(409, "Seule une déclaration en attente peut être validée.")
     claim.status = ClaimStatus.validated
     claim.validated_by = user.id
     claim.validated_at = datetime.now(UTC)

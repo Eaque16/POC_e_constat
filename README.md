@@ -107,8 +107,19 @@ modifie uniquement ses appels et déclarations ; un responsable peut consulter l
 et le dashboard. Les helpers `get_owned_call_or_404` et `get_owned_claim_or_404` masquent aussi
 l’existence d’une ressource tierce avec une réponse 404.
 
-Le lanceur historique conserve temporairement `DISABLE_AUTH=true` pour l’ancienne UI, qui ne possède
-pas encore d’écran de connexion. Cette exception locale sera retirée lors de la phase Interface.
+L’interface Gradio possède son propre écran de connexion et transmet le JWT à chaque appel API.
+`run-local.ps1` conserve donc `DISABLE_AUTH=false`. Les comptes synthétiques créés par le bootstrap
+sont `agent.demo / DemoAgent2026!` et `responsable.demo / DemoResp2026!`.
+
+## Parcours de l’interface
+
+L’interface ne charge aucun modèle IA et ne lance aucun calcul lourd. Elle permet de se connecter,
+de téléverser ou enregistrer un audio de démonstration, de choisir `fast` ou `quality`, puis de suivre
+le job par actualisation. Le worker reste un processus séparé lancé avec `run-worker.ps1`.
+
+Dans l’onglet **À valider**, la proposition IA, sa preuve littérale, sa confiance, la valeur corrigée
+et la valeur finalement validée sont distinguées. Les rôles de locuteur peuvent être corrigés.
+Une déclaration validée ou envoyée devient non modifiable côté API, même si l’interface est contournée.
 
 ## Ingestion audio sécurisée
 

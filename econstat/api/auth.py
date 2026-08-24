@@ -35,5 +35,7 @@ def login(
     )
     db.commit()
     return TokenResponse(
-        access_token=create_token(user.id, user.role.value, get_settings())
+        access_token=create_token(user.id, user.role.value, get_settings()),
+        username=user.username,
+        role=user.role.value,
     )

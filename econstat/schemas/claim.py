@@ -1,4 +1,4 @@
-from datetime import date, time
+from datetime import date, datetime, time
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -60,6 +60,26 @@ class ClaimExtraction(BaseModel):
     suggested_questions: list[str] = Field(default_factory=list)
     overall_confidence: float = Field(default=0.0, ge=0, le=1)
     trace: dict = Field(default_factory=dict)
+
+
+class ClaimReviewResponse(BaseModel):
+    id: str
+    call_id: str
+    status: str
+    proposed_data: dict
+    current_data: dict
+    validated_data: dict | None
+    confidence: dict[str, float]
+    evidence: dict[str, str]
+    missing_fields: list[str]
+    questions: list[str]
+    global_confidence: float
+    human_corrections: int
+    validated_by: str | None
+    validated_at: datetime | None
+    external_id: str | None
+    created_at: datetime
+    updated_at: datetime
 
 
 REQUIRED_FIELDS = (

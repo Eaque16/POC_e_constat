@@ -97,6 +97,8 @@ def test_login_success_failure_and_audit(security_client):
     )
     assert valid.status_code == 200
     assert valid.json()["token_type"] == "bearer"
+    assert valid.json()["username"] == data.agent_a.username
+    assert valid.json()["role"] == "agent"
 
     with factory() as db:
         logins = db.scalar(
@@ -192,6 +194,31 @@ def test_agent_can_update_and_validate_owned_claim(security_client):
         assert saved.data_json["plaque"] == "AC 1234 CI"
         assert saved.human_corrections == 1
         assert saved.validated_by == data.agent_a.id
+
+
+def test_claim_review_preserves_ai_proposal_and_locks_after_validation(security_client):
+    client, _, data = security_client
+    headers = authorization(data.agent_a)
+
+    update = client.put(
+        f"/api/claims/{data.claim_a.id}",
+        headers=headers,
+        json={"data": {"plaque": "AC 1234 CI"}},
+    )
+    review = client.get(f"/api/claims/{data.claim_a.id}", headers=headers)
+    validation = client.post(f"/api/claims/{data.claim_a.id}/validate", headers=headers)
+    locked = client.put(
+        f"/api/claims/{data.claim_a.id}",
+        headers=headers,
+        json={"data": {"plaque": "AB 0000 CI"}},
+    )
+
+    assert update.status_code == 200
+    assert review.status_code == 200
+    assert review.json()["proposed_data"]["plaque"] == "AA 111 AA"
+    assert review.json()["current_data"]["plaque"] == "AC 1234 CI"
+    assert validation.status_code == 200
+    assert locked.status_code == 409
 
 
 def test_database_role_wins_over_forged_token_role(security_client):

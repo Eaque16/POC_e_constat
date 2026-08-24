@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -12,6 +13,15 @@ class CallUploadResponse(BaseModel):
     job_status: str
     duration_seconds: float
     sha256: str
+
+
+class CallReviewResponse(BaseModel):
+    id: str
+    duration_seconds: float | None
+    transcript_text: str | None
+    segments: list[TranscriptSegment]
+    created_at: datetime
+    completed_at: datetime | None
 
 
 class SpeakerCorrection(BaseModel):

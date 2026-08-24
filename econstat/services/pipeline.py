@@ -111,7 +111,10 @@ async def process_processing_job(db: Session, job: ProcessingJob, settings: Sett
             claim.missing_fields_json = extraction.missing_fields
             claim.questions_json = extraction.suggested_questions
             claim.global_confidence = extraction.overall_confidence
-            claim.model_trace_json = extraction.trace
+            claim.model_trace_json = {
+                **extraction.trace,
+                "ai_proposal": extraction.data.model_dump(mode="json"),
+            }
             claim.status = ClaimStatus.pending_validation
             call.completed_at = datetime.now(UTC)
             db.add(claim)
