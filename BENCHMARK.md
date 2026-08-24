@@ -63,3 +63,25 @@ les hashes du lock et du manifeste, Python, la machine, le profil, la seed et le
 Le manifeste versionné `synthetic-text-v1` mesure uniquement la baseline d’extraction sur cinq
 transcriptions synthétiques. Il ne permet pas de calculer le WER ou le DER : ces valeurs restent
 explicitement `null`, avec un statut expliquant l’annotation absente.
+
+## Baseline extraction déterministe — mesure du 2026-08-24
+
+Expérience `598cb546-e436-465e-b9a7-b4fbadc30eac`, commit propre `eb38f11`, Python 3.11.9,
+Windows CPU, cinq transcriptions synthétiques, LLM désactivé et aucun ASR exécuté.
+
+| Mesure | Résultat |
+|---|---:|
+| Précision micro | 1,000000 |
+| Rappel micro | 0,937500 |
+| F1 micro | 0,967742 |
+| F1 macro | 0,909091 |
+| Taux de prédictions sans vérité terrain | 0,000000 |
+| Cas nécessitant une correction | 0,200000 |
+| Temps total extraction, 5 cas | 0,082957 s |
+| Pic mémoire Python mesuré par `tracemalloc` | 0,138 Mo |
+
+Échec observé : le numéro `0708091011` dicté entièrement en lettres n’est pas extrait. Le corpus est
+minuscule et construit pour tester les règles ; ces scores ne permettent aucune conclusion sur des
+appels réels, le bruit ou les accents. WER, facteur temps réel ASR et DER restent non mesurables faute
+d’audio français annoté et de tours de parole de référence. Le détail traçable est conservé dans
+`experiments/baseline-rules-synthetic-v1.json`.

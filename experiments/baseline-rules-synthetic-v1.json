@@ -1,0 +1,54 @@
+{
+  "experiment_id": "598cb546-e436-465e-b9a7-b4fbadc30eac",
+  "date": "2026-08-24T06:08:10.092143+00:00",
+  "git_commit": "eb38f115a51a7db1fc9d62700b50260d1e453f17",
+  "git_dirty": false,
+  "python_version": "3.11.9",
+  "dependency_lock_hash": "cccdd31ca94dc100f241903166a47e611e88f774c0b65f3b901a2274bf4c4a4e",
+  "model_name": "models\\whisper-tiny",
+  "model_revision": "16bd02185bdaa6b00fb4b0deb46e47ac1b754b8e",
+  "model_file_hash": null,
+  "dataset_version": "synthetic-text-v1",
+  "dataset_hash": "17b80b0026b5d11fe59d19ea1d171efa9e7e6034588c89cdb2830f7da1e96b49",
+  "random_seed": 42,
+  "processing_profile": "fast",
+  "machine_info": {
+    "system": "Windows",
+    "release": "10",
+    "machine": "AMD64",
+    "processor": "Intel64 Family 6 Model 142 Stepping 12, GenuineIntel",
+    "cpu_count": 8
+  },
+  "parameters": {
+    "run_asr": false,
+    "llm_enabled": false,
+    "allow_model_downloads": false
+  },
+  "metrics": {
+    "transcription": {
+      "wer": null,
+      "status": "non_mesurable_sans_reference"
+    },
+    "diarization": {
+      "der": null,
+      "status": "non_mesurable_sans_annotations_de_tours"
+    },
+    "extraction": {
+      "macro_f1": 0.909091,
+      "micro_precision": 1.0,
+      "micro_recall": 0.9375,
+      "micro_f1": 0.967742,
+      "hallucination_rate": 0.0,
+      "human_correction_case_rate": 0.2,
+      "known_failure": "telephone_assure dicté entièrement en lettres"
+    },
+    "operational": {
+      "cases": 5,
+      "total_seconds": 0.082957,
+      "python_peak_memory_mb": 0.138,
+      "audio_seconds": null,
+      "transcription_seconds": null,
+      "real_time_factor": null
+    }
+  }
+}
