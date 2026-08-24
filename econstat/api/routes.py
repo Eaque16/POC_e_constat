@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from econstat.api.deps import (
@@ -31,8 +31,10 @@ from econstat.schemas.call import (
     SpeakerCorrectionsResponse,
 )
 from econstat.schemas.claim import ClaimData, ClaimReviewResponse, TranscriptSegment
+from econstat.schemas.dashboard import DashboardResponse
 from econstat.schemas.job import JobResponse
 from econstat.services.audio_validation import AudioValidationError, validate_and_store_audio
+from econstat.services.dashboard import build_dashboard
 from econstat.services.econsta import EConstaClient, EConstaError, EConstaTimeoutError
 from econstat.services.extraction import HybridExtractor
 from econstat.services.jobs import create_job
@@ -455,33 +457,8 @@ def claim_json_export(
     return {"path": str(path)}
 
 
-@router.get("/dashboard")
-def dashboard(_: User = Depends(responsable), db: Session = Depends(get_db)):
-    total = db.scalar(select(func.count(Call.id))) or 0
-    claims = db.scalar(select(func.count(Claim.id))) or 0
-    validated = (
-        db.scalar(
-            select(func.count(Claim.id)).where(
-                Claim.status.in_([ClaimStatus.validated, ClaimStatus.sent])
-            )
-        )
-        or 0
-    )
-    edits = db.scalar(select(func.sum(Claim.human_edits))) or 0
-    durations = [v for v in db.scalars(select(Call.duration_seconds)).all() if v is not None]
-    all_claims = db.scalars(select(Claim)).all()
-    motifs: dict[str, int] = {}
-    for claim in all_claims:
-        motif = claim.data.get("type_accident") or "non renseigné"
-        motifs[motif] = motifs.get(motif, 0) + 1
-    pending = claims - validated
-    return {
-        "appels": total,
-        "declarations": claims,
-        "validees": validated,
-        "en_attente": pending,
-        "temps_moyen_secondes": round(sum(durations) / len(durations), 1) if durations else None,
-        "part_sans_edition_humaine": round(1 - edits / max(claims, 1), 2),
-        "motifs": motifs,
-        "alertes": ["Dossiers en attente à traiter"] if pending else [],
-    }
+@router.get("/dashboard", response_model=DashboardResponse)
+def dashboard(
+    _: User = Depends(responsable), db: Session = Depends(get_db)
+) -> DashboardResponse:
+    return build_dashboard(db)

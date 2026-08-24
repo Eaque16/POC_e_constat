@@ -131,6 +131,15 @@ identifiant de corrélation. Une répétition retourne la référence externe ex
 succès, répétitions et échecs sont audités ; un timeout du mock est exposé en HTTP 504 et une autre
 erreur de communication en HTTP 502. Le timeout se règle avec `ECONSTA_TIMEOUT_SECONDS`.
 
+## Dashboard responsable
+
+`GET /api/dashboard` est réservé au rôle `responsable`. Il expose le nombre d’appels et de dossiers,
+les traitements actifs, dossiers à valider, validés et envoyés, ainsi que les erreurs. Le temps moyen
+est calculé uniquement sur les jobs terminés en `ready_for_review`; les jobs échoués restent dans leur
+indicateur séparé. Les taux de correction portent sur les déclarations existantes et valent zéro
+lorsque la base est vide. Les types d’accident et codes d’erreur sont présentés sous forme de
+distributions agrégées, sans contenu individuel de dossier.
+
 ## Ingestion audio sécurisée
 
 `POST /api/calls` lit le fichier par blocs avec une limite stricte, vérifie le MIME déclaré puis

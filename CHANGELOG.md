@@ -1,5 +1,14 @@
 # Changelog
 
+## Phase 11 — Dashboard responsable
+
+- Contrat typé couvrant appels, dossiers, états, erreurs, latence et corrections.
+- Distinction explicite entre dossiers à valider, validés et envoyés.
+- Temps moyen basé uniquement sur les traitements arrivés à la revue humaine.
+- Distribution des types d’accident et des codes d’erreur sans données individuelles.
+- Interface Gradio avec KPI, distributions et alertes réservées au responsable.
+- Tests des métriques nominales, de la base vide et du contrôle de rôle.
+
 ## Phase 10 — Export JSON et mock E-consta
 
 - Export JSON versionné avec double garde-fou de validation humaine.

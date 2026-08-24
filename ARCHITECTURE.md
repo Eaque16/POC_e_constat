@@ -49,6 +49,8 @@ Gradio UI ---- polling HTTP ----> FastAPI
 7. L’API, le service d’export JSON et `EConstaClient` imposent la validation humaine.
 8. `EConstaClient` utilise une clé d’idempotence stable par déclaration et un identifiant de
    corrélation par tentative ; le mock refuse une même clé associée à un contenu différent.
+9. Le dashboard effectue des agrégations portables en Python pour le volume limité du POC. Une
+   agrégation SQL dédiée restera une optimisation réversible si le volume augmente.
 
 ## Décisions structurantes
 

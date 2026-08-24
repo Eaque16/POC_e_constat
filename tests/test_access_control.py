@@ -316,4 +316,5 @@ def test_manager_can_list_all_claims_and_open_dashboard(security_client):
     assert claims.status_code == 200
     assert {claim["id"] for claim in claims.json()} == {data.claim_a.id, data.claim_b.id}
     assert dashboard.status_code == 200
-    assert dashboard.json()["declarations"] == 2
+    assert dashboard.json()["dossiers"] == 2
+    assert dashboard.json()["dossiers_a_valider"] == 2

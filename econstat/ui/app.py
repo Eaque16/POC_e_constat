@@ -225,7 +225,21 @@ def load_dashboard(session: dict):
         data = api.dashboard(require_token(session))
     except APIError as exc:
         raise gr.Error(f"Dashboard réservé au responsable : {exc}") from exc
-    return json.dumps(data, ensure_ascii=False, indent=2)
+    return (
+        data["appels"],
+        data["dossiers"],
+        data["dossiers_en_cours"],
+        data["dossiers_a_valider"],
+        data["dossiers_valides"],
+        data["dossiers_envoyes"],
+        data["erreurs_traitement"],
+        data["temps_moyen_traitement_secondes"] or 0,
+        data["taux_dossiers_corriges_pct"],
+        data["taux_dossiers_sans_correction_pct"],
+        json.dumps(data["distribution_types_accident"], ensure_ascii=False, indent=2),
+        json.dumps(data["distribution_erreurs"], ensure_ascii=False, indent=2),
+        "\n".join(f"- {alert}" for alert in data["alertes"]) or "Aucune alerte.",
+    )
 
 
 def build_app() -> gr.Blocks:
@@ -345,8 +359,47 @@ def build_app() -> gr.Blocks:
             history_btn.click(refresh_claims, session, [history_selector, history])
         with gr.Tab("Dashboard responsable"):
             dashboard_btn = gr.Button("Actualiser")
-            dashboard_json = gr.Code(language="json", label="Indicateurs")
-            dashboard_btn.click(load_dashboard, session, dashboard_json)
+            with gr.Row():
+                dashboard_calls = gr.Number(label="Appels", interactive=False)
+                dashboard_claims = gr.Number(label="Dossiers", interactive=False)
+                dashboard_active = gr.Number(label="En cours", interactive=False)
+                dashboard_pending = gr.Number(label="À valider", interactive=False)
+                dashboard_validated = gr.Number(label="Validés", interactive=False)
+                dashboard_sent = gr.Number(label="Envoyés", interactive=False)
+                dashboard_errors = gr.Number(label="Erreurs", interactive=False)
+            with gr.Row():
+                dashboard_time = gr.Number(
+                    label="Temps moyen de traitement (s)", interactive=False
+                )
+                dashboard_corrected = gr.Number(
+                    label="Dossiers corrigés (%)", interactive=False
+                )
+                dashboard_uncorrected = gr.Number(
+                    label="Sans correction (%)", interactive=False
+                )
+            with gr.Row():
+                dashboard_types = gr.Code(language="json", label="Types d’accident")
+                dashboard_error_types = gr.Code(language="json", label="Erreurs par code")
+            dashboard_alerts = gr.Markdown()
+            dashboard_btn.click(
+                load_dashboard,
+                session,
+                [
+                    dashboard_calls,
+                    dashboard_claims,
+                    dashboard_active,
+                    dashboard_pending,
+                    dashboard_validated,
+                    dashboard_sent,
+                    dashboard_errors,
+                    dashboard_time,
+                    dashboard_corrected,
+                    dashboard_uncorrected,
+                    dashboard_types,
+                    dashboard_error_types,
+                    dashboard_alerts,
+                ],
+            )
     return demo
 
 
