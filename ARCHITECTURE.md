@@ -93,6 +93,9 @@ le schéma n’est pas reconnu.
 ## Sécurité et données
 
 - Contrôle de propriété centralisé pour appels et déclarations.
+- Le rôle effectif est toujours relu en base ; une revendication de rôle JWT falsifiée est ignorée.
+- Les accès croisés répondent 404 afin de ne pas révéler l’existence d’un dossier tiers.
+- Le dashboard impose le rôle `responsable`.
 - Noms serveur générés par UUID.
 - Limites de taille, MIME, conteneur, durée et hash avant traitement.
 - Aucun secret, audio réel, modèle lourd, base locale ou PDF client dans Git.

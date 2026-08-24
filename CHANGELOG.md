@@ -11,6 +11,10 @@
   `0002`, adoption prudente des bases historiques et seed idempotent.
 - Validation phase 2 : migration aller/retour, copie réelle avec conservation des données, CRUD,
   contraintes de progression, Alembic check, 17 tests, Ruff et `pip check`.
+- Phase 3 : endpoint d’authentification isolé, audit de connexion, rôle relu en base, helpers de
+  propriété centralisés et protection de toutes les routes appel/déclaration.
+- Validation phase 3 : connexion, jetons invalides, accès croisés, rôle JWT falsifié, périmètre
+  responsable, garde-fous PDF/envoi, 30 tests, Ruff et `pip check`.
 
 > Les entrées correspondent aux quatre itérations logiques. Git étant absent de la machine de
 > construction, elles restent à matérialiser en commits après installation des prérequis.

@@ -3,17 +3,20 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from econstat.api.deps import current_user, responsable
+from econstat.api.deps import (
+    current_user,
+    get_owned_call_or_404,
+    get_owned_claim_or_404,
+    responsable,
+)
 from econstat.config import get_settings
 from econstat.database import get_db
 from econstat.models import AuditLog, Call, Claim, ClaimStatus, User
 from econstat.schemas.claim import ClaimData
-from econstat.services.auth import create_token, verify_password
 from econstat.services.diarization import Diarizer, align_and_label
 from econstat.services.econsta import EConstaClient
 from econstat.services.extraction import HybridExtractor
@@ -32,24 +35,13 @@ class TranscriptRequest(BaseModel):
     transcript: str
 
 
-@router.post("/auth/token")
-def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    user = db.scalar(select(User).where(User.username == form.username))
-    if not user or not verify_password(form.password, user.password_hash):
-        raise HTTPException(401, "Identifiants invalides")
-    return {
-        "access_token": create_token(user.id, user.role.value, get_settings()),
-        "token_type": "bearer",
-    }
-
-
 @router.post("/calls", status_code=201)
 async def create_call(
     audio: UploadFile = File(...), user: User = Depends(current_user), db: Session = Depends(get_db)
 ):
     settings = get_settings()
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
-    call = Call(agent_id=user.id, audio_reference="pending")
+    call = Call(owner_id=user.id, audio_path="pending")
     db.add(call)
     db.flush()
     suffix = Path(audio.filename or "audio.wav").suffix.lower()
@@ -58,7 +50,7 @@ async def create_call(
     target = settings.upload_dir / f"{call.id}{suffix}"
     with target.open("wb") as stream:
         shutil.copyfileobj(audio.file, stream)
-    call.audio_reference = str(target)
+    call.audio_path = str(target)
     db.commit()
     return {"id": call.id, "status": "uploaded"}
 
@@ -67,9 +59,7 @@ async def create_call(
 async def extract_call(
     call_id: str, transcript: str, user: User = Depends(current_user), db: Session = Depends(get_db)
 ):
-    call = db.get(Call, call_id)
-    if not call or (call.agent_id != user.id and user.role.value != "responsable"):
-        raise HTTPException(404, "Appel introuvable")
+    call = get_owned_call_or_404(call_id, user, db)
     result = await HybridExtractor(get_settings()).extract(transcript)
     call.transcript = transcript
     call.completed_at = datetime.now(UTC)
@@ -102,12 +92,10 @@ def transcribe_call(
     call_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)
 ):
     """Transcrit et persiste le transcript sans lancer l'extraction structurée."""
-    call = db.get(Call, call_id)
-    if not call or (call.agent_id != user.id and user.role.value != "responsable"):
-        raise HTTPException(404, "Appel introuvable")
-    segments = Transcriber(get_settings()).transcribe(Path(call.audio_reference))
+    call = get_owned_call_or_404(call_id, user, db)
+    segments = Transcriber(get_settings()).transcribe(Path(call.audio_path))
     try:
-        turns = Diarizer(get_settings()).diarize(Path(call.audio_reference))
+        turns = Diarizer(get_settings()).diarize(Path(call.audio_path))
     except RuntimeError:
         turns = []
     labelled = align_and_label(segments, turns)
@@ -133,9 +121,9 @@ async def create_demo_call(
     """Parcours de secours sans poids STT : transcript fourni et réellement persisté."""
     result = await HybridExtractor(get_settings()).extract(body.transcript)
     call = Call(
-        agent_id=user.id,
-        audio_reference="demo://transcript",
-        transcript=body.transcript,
+        owner_id=user.id,
+        audio_path="demo://transcript",
+        transcript_text=body.transcript,
         completed_at=datetime.now(UTC),
     )
     db.add(call)
@@ -169,11 +157,9 @@ async def create_demo_call(
 async def process_call_audio(
     call_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)
 ):
-    """Pipeline GPU complet ; l'endpoint /extract reste le mode démo transcript/offline."""
-    call = db.get(Call, call_id)
-    if not call or (call.agent_id != user.id and user.role.value != "responsable"):
-        raise HTTPException(404, "Appel introuvable")
-    result, segments = await process_audio(Path(call.audio_reference), get_settings())
+    """Pipeline historique ; la phase Jobs le déplacera hors de la requête HTTP."""
+    call = get_owned_call_or_404(call_id, user, db)
+    result, segments = await process_audio(Path(call.audio_path), get_settings())
     call.transcript = "\n".join(f"{s.speaker}: {s.text}" for s in segments)
     call.segments = [s.model_dump() for s in segments]
     call.completed_at = datetime.now(UTC)
@@ -205,7 +191,7 @@ async def process_call_audio(
 def list_claims(user: User = Depends(current_user), db: Session = Depends(get_db)):
     stmt = select(Claim).join(Call).order_by(Claim.created_at.desc())
     if user.role.value == "agent":
-        stmt = stmt.where(Call.agent_id == user.id)
+        stmt = stmt.where(Call.owner_id == user.id)
     return db.scalars(stmt).all()
 
 
@@ -216,9 +202,7 @@ def update_claim(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    claim = db.get(Claim, claim_id)
-    if not claim:
-        raise HTTPException(404, "Déclaration introuvable")
+    claim = get_owned_claim_or_404(claim_id, user, db)
     claim.data = body.data.model_dump(mode="json")
     claim.human_edits += 1
     db.add(
@@ -238,9 +222,7 @@ def update_claim(
 def validate_claim(
     claim_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)
 ):
-    claim = db.get(Claim, claim_id)
-    if not claim:
-        raise HTTPException(404, "Déclaration introuvable")
+    claim = get_owned_claim_or_404(claim_id, user, db)
     claim.status = ClaimStatus.validated
     claim.validated_by = user.id
     claim.validated_at = datetime.now(UTC)
@@ -261,8 +243,8 @@ def validate_claim(
 async def send_claim(
     claim_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)
 ):
-    claim = db.get(Claim, claim_id)
-    if not claim or claim.status != ClaimStatus.validated or not claim.validated_by:
+    claim = get_owned_claim_or_404(claim_id, user, db)
+    if claim.status != ClaimStatus.validated or not claim.validated_by:
         raise HTTPException(409, "Une validation humaine explicite est obligatoire")
     result = await EConstaClient(get_settings()).create_claim(claim.id, claim.data, True)
     claim.external_id = result["id"]
@@ -282,8 +264,8 @@ async def send_claim(
 
 @router.get("/claims/{claim_id}/pdf")
 def claim_pdf(claim_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    claim = db.get(Claim, claim_id)
-    if not claim or claim.status not in {ClaimStatus.validated, ClaimStatus.sent}:
+    claim = get_owned_claim_or_404(claim_id, user, db)
+    if claim.status not in {ClaimStatus.validated, ClaimStatus.sent}:
         raise HTTPException(409, "Le PDF exige une validation humaine")
     return {"path": str(generate_claim_pdf(claim.id, claim.data, get_settings().pdf_dir))}
 

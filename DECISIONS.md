@@ -71,3 +71,17 @@
 **Pourquoi** : suffisant pour commits, modèles, données, paramètres et métriques.  
 **Conséquences** : schéma et discipline d’écriture nécessaires.  
 **Réversibilité** : import possible dans un outil futur.
+
+## ADR-009 — Autorisation par propriété relue en base
+
+**Contexte** : connaître l’UUID d’une déclaration ne doit pas permettre d’agir dessus.
+
+**Options** : confiance dans le rôle JWT ; contrôles dispersés ; helpers centralisés avec rôle DB.
+
+**Choix** : helpers de propriété communs et rôle relu depuis `User`.
+
+**Pourquoi** : évite les oublis de route et rend un rôle JWT falsifié sans effet.
+
+**Conséquences** : les routes sensibles nécessitent une session et l’utilisateur courant.
+
+**Réversibilité** : une future politique ABAC pourra remplacer les helpers derrière le même contrat.

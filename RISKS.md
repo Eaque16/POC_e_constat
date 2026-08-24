@@ -7,7 +7,7 @@
 | R03 | Téléchargement modèle impossible | Moyenne | Élevé | modèles locaux, téléchargement explicite, hash | Tech Lead | Ouvert |
 | R04 | Hallucination du LLM | Moyenne | Élevé | règles, preuve littérale, score, validation humaine | Lead IA | Ouvert |
 | R05 | Exposition de données sensibles | Moyenne | Critique | Git ignore, stockage local, rétention, données synthétiques | Manager | Ouvert |
-| R06 | Contrôle d’accès insuffisant | Moyenne | Critique | propriété centralisée et tests inter-utilisateurs | Tech Lead | Ouvert |
+| R06 | Contrôle d’accès insuffisant | Moyenne | Critique | propriété centralisée et tests inter-utilisateurs | Tech Lead | Maîtrisé phase 3 |
 | R07 | Dépendances Python incompatibles | Moyenne | Élevé | Python 3.11, `.venv`, versions figées, pip check | Tech Lead | Maîtrisé phase 1 |
 | R08 | API E-consta réelle absente | Élevée | Moyen | client encapsulé, mock, contrat documenté | Manager | Ouvert |
 | R09 | SQLite limité en concurrence | Faible au POC | Moyen | worker unique, transactions courtes, PostgreSQL futur | Architecte | Accepté POC |
@@ -17,6 +17,7 @@
 | R13 | Confusion Python système/projet | Moyenne | Moyen | commandes `.venv`, diagnostic, scripts stricts | Tech Lead | Maîtrisé phase 1 |
 | R14 | Secret de développement hors local | Moyenne | Critique | variable obligatoire, `.env` ignoré, diagnostic sans valeur | Tech Lead | Ouvert |
 | R15 | Migration d’une base historique inconnue | Faible | Critique | détection stricte, refus par défaut, sauvegarde, test sur copie | Tech Lead | Maîtrisé phase 2 |
+| R16 | Bypass local conservé pour l’ancienne UI | Moyenne | Élevé | bind localhost, statut explicite, suppression prévue en phase 9 | Tech Lead | Accepté temporairement |
 
 ## Règle de maintenance
 

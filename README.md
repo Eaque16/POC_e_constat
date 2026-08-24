@@ -9,9 +9,9 @@ sans dépendance obligatoire à CUDA, Docker, WSL2, Kafka, Redis ou Celery.
 ## État de la reprise
 
 La branche `rebuild/cpu-first` reconstruit progressivement l’ancien POC sans le supprimer avant
-remplacement vérifié. Les phases 0 à 2 couvrent le cadrage, la reproductibilité Windows, le
-diagnostic et le modèle de données persistant avec file SQL. Les fonctions métier historiques ne
-sont considérées livrées dans la nouvelle architecture qu’après leur phase dédiée.
+remplacement vérifié. Les phases 0 à 3 couvrent le cadrage, la reproductibilité Windows, le
+diagnostic, le modèle de données et la sécurité API. Les fonctions métier historiques ne sont
+considérées livrées dans la nouvelle architecture qu’après leur phase dédiée.
 
 - cœur Python local et 11 tests historiques opérationnels ;
 - CPU obligatoire, aucun GPU NVIDIA détecté sur la machine de construction ;
@@ -86,6 +86,24 @@ idempotente :
 
 Une base historique non versionnée n’est adoptée automatiquement que si ses tables et colonnes
 correspondent exactement au schéma connu. Un schéma inconnu est refusé sans modification.
+
+## Authentification et autorisations
+
+Obtenir un jeton :
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/auth/token `
+  -ContentType "application/x-www-form-urlencoded" `
+  -Body "username=agent.demo&password=DemoAgent2026%21"
+```
+
+L’API utilise le rôle conservé en base, jamais le rôle déclaré par le client. Un agent voit et
+modifie uniquement ses appels et déclarations ; un responsable peut consulter le périmètre global
+et le dashboard. Les helpers `get_owned_call_or_404` et `get_owned_claim_or_404` masquent aussi
+l’existence d’une ressource tierce avec une réponse 404.
+
+Le lanceur historique conserve temporairement `DISABLE_AUTH=true` pour l’ancienne UI, qui ne possède
+pas encore d’écran de connexion. Cette exception locale sera retirée lors de la phase Interface.
 
 ## Démarrage prévu
 
