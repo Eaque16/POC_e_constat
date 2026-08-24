@@ -1,23 +1,60 @@
 import json
 import os
 from datetime import UTC, datetime
+from html import escape
 from pathlib import Path
 
 import gradio as gr
 
+from econstat.config import get_settings
+from econstat.schemas.claim import QUESTION_TEMPLATES
+from econstat.services.conversation import (
+    WELCOME_MESSAGE,
+    new_conversation,
+    progress,
+    respond,
+    summary_markdown,
+    validated_data,
+)
+from econstat.services.geolocation import nearest_place
+from econstat.services.transcription import Transcriber, TranscriptionError
 from econstat.ui.api_client import APIError, EConstatAPI
 
 API_URL = os.getenv("ECONSTAT_API_URL", "http://127.0.0.1:8000/api")
 UI_PORT = int(os.getenv("ECONSTAT_UI_PORT", "7860"))
+UI_HOST = os.getenv("ECONSTAT_UI_HOST", "127.0.0.1")
 JOB_POLL_SECONDS = float(os.getenv("JOB_POLL_SECONDS", "2"))
 UI_DIR = Path(__file__).resolve().parent
 api = EConstatAPI(API_URL)
+CALL_IDLE_MESSAGE = (
+    "Cliquez sur **Décrocher et démarrer**. L’assistant parlera en premier, puis le "
+    "microphone permettra d’enregistrer chaque réponse."
+)
+SPEAK_JS = """(text) => new Promise((resolve) => {
+  if (!text || !window.speechSynthesis) { resolve(); return; }
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = 'fr-FR';
+  const voices = window.speechSynthesis.getVoices();
+  const french = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('fr'));
+  if (french) utterance.voice = french;
+  utterance.onend = resolve;
+  utterance.onerror = resolve;
+  window.speechSynthesis.speak(utterance);
+})"""
+GPS_JS = """() => new Promise((resolve) => {
+  if (!navigator.geolocation) { resolve([null, null]); return; }
+  navigator.geolocation.getCurrentPosition(
+    p => resolve([p.coords.latitude, p.coords.longitude]),
+    () => resolve([null, null]),
+    {enableHighAccuracy: true, timeout: 10000}
+  );
+})"""
 
 
-def require_token(session: dict | None) -> str:
-    if not session or not session.get("token"):
-        raise gr.Error("Connectez-vous avant d’utiliser cette fonction.")
-    return session["token"]
+def require_token(_session: dict | None) -> str:
+    """Le mode borne temps réel utilise le compte local sans écran de connexion."""
+    return ""
 
 
 def login(username: str, password: str):
@@ -35,6 +72,115 @@ def login(username: str, password: str):
 
 def logout():
     return {}, "Non connecté"
+
+
+def restart_conversation():
+    state = new_conversation()
+    return state, [(None, CALL_IDLE_MESSAGE)], "", summary_markdown(state), "", "🟢 Prêt"
+
+
+def start_live_call():
+    state = new_conversation()
+    return (
+        state,
+        [(None, WELCOME_MESSAGE)],
+        summary_markdown(state),
+        "🔴 Appel en cours — microphone prêt",
+        gr.update(interactive=True),
+        gr.update(interactive=False),
+        gr.update(interactive=True),
+        WELCOME_MESSAGE,
+    )
+
+
+def end_live_call():
+    return (
+        "⚫ Appel terminé — les échanges restent affichés",
+        gr.update(interactive=False, value=None),
+        gr.update(interactive=True),
+        gr.update(interactive=False),
+    )
+
+
+def send_chat_message(message: str, history: list, conversation: dict):
+    if not message or not message.strip():
+        raise gr.Error("Écrivez votre réponse ou votre question.")
+    reply, conversation = respond(message, conversation)
+    return (
+        "",
+        (history or []) + [(message.strip(), reply)],
+        conversation,
+        summary_markdown(conversation),
+        reply,
+        "🟢 Réponse prête",
+    )
+
+
+def process_voice_message(audio_path: str | None, history: list, conversation: dict):
+    """Diffuse les étapes de transcription, réflexion et synthèse dans l’interface."""
+    yield (
+        "🟠 Transcription de la voix…",
+        "",
+        history or [],
+        conversation,
+        summary_markdown(conversation),
+        None,
+        None,
+    )
+    try:
+        if not audio_path:
+            raise gr.Error("Enregistrez d’abord la réponse de l’interlocuteur.")
+        segments = Transcriber(get_settings(), profile="fast").transcribe(Path(audio_path))
+        transcript = " ".join(segment.text for segment in segments).strip()
+        if not transcript:
+            raise gr.Error("Aucune parole n’a été détectée dans l’enregistrement.")
+    except TranscriptionError as exc:
+        raise gr.Error(str(exc)) from exc
+    visible_history = (history or []) + [(transcript, None)]
+    yield (
+        "🟠 L’agent analyse la réponse…",
+        transcript,
+        visible_history,
+        conversation,
+        summary_markdown(conversation),
+        None,
+        None,
+    )
+    reply, conversation = respond(transcript, conversation)
+    visible_history[-1] = (transcript, reply)
+    yield (
+        "🟠 Préparation de la réponse audio…",
+        transcript,
+        visible_history,
+        conversation,
+        summary_markdown(conversation),
+        None,
+        None,
+    )
+    yield (
+        "🟢 Réponse prête — lecture audio en cours",
+        transcript,
+        visible_history,
+        conversation,
+        summary_markdown(conversation),
+        reply,
+        None,
+    )
+
+
+def create_claim_from_chat(session: dict, conversation: dict):
+    token = require_token(session)
+    if progress((conversation or {}).get("data", {})) < 100:
+        raise gr.Error("Terminez les questions essentielles avant de créer le dossier.")
+    try:
+        data = validated_data(conversation).model_dump(mode="json")
+        result = api.create_conversation_claim(token, data, conversation["transcript"])
+    except (APIError, ValueError) as exc:
+        raise gr.Error(f"Création du dossier impossible : {exc}") from exc
+    return (
+        f"Dossier **{result['claim_id']}** créé. Il est maintenant en attente du contrôle "
+        "et de la validation d’un agent humain."
+    )
 
 
 def submit_audio(session: dict, audio_path: str | None, profile: str):
@@ -65,23 +211,23 @@ def refresh_jobs(session: dict):
             started_at = datetime.fromisoformat(started.replace("Z", "+00:00"))
             elapsed = round((datetime.now(UTC) - started_at).total_seconds())
         rows.append(
-        [
-            item["id"],
-            item["call_id"],
-            item["profile"],
-            item["status"],
-            item["current_step"],
-            item["progress_pct"],
-            item.get("error_message") or "",
-            elapsed,
-            item["updated_at"],
-        ]
+            [
+                item["id"],
+                item["call_id"],
+                item["profile"],
+                item["status"],
+                item["current_step"],
+                item["progress_pct"],
+                item.get("error_message") or "",
+                elapsed,
+                item["updated_at"],
+            ]
         )
     return rows
 
 
 def poll_jobs(session: dict):
-    return refresh_jobs(session) if session and session.get("token") else []
+    return refresh_jobs(session)
 
 
 def retry_job(session: dict, job_id: str):
@@ -163,8 +309,7 @@ def load_review(session: dict, claim_id: str):
         segments,
         field_rows(claim),
         json.dumps(claim["current_data"], ensure_ascii=False, indent=2),
-        f"**Champs manquants :** {missing}\n\n"
-        f"**Questions suggérées :**\n{questions or '—'}",
+        f"**Champs manquants :** {missing}\n\n" f"**Questions suggérées :**\n{questions or '—'}",
     )
 
 
@@ -242,7 +387,231 @@ def load_dashboard(session: dict):
     )
 
 
-def build_app() -> gr.Blocks:
+CLAIM_SECTIONS = (
+    ("Interlocuteur", (("nom_assure", "Nom"), ("telephone_assure", "Téléphone"))),
+    ("Véhicule", (("plaque", "Immatriculation"),)),
+    (
+        "Sinistre",
+        (
+            ("date_accident", "Date"),
+            ("heure_accident", "Heure"),
+            ("lieu", "Lieu"),
+            ("type_accident", "Type"),
+        ),
+    ),
+    (
+        "Situation",
+        (
+            ("nombre_vehicules", "Véhicules impliqués"),
+            ("vehicule_immobilise", "Véhicule roulant"),
+        ),
+    ),
+    ("Dommages", (("dommages", "Description"),)),
+    ("Circonstances", (("circonstances", "Récit"),)),
+)
+CLAIM_FIELD_COUNT = sum(len(fields) for _, fields in CLAIM_SECTIONS)
+
+
+def _display_claim_value(field: str, value) -> str:
+    if value is None:
+        return "—"
+    if isinstance(value, bool):
+        if field == "vehicule_immobilise":
+            return "Non" if value else "Oui"
+        return "Oui" if value else "Non"
+    return escape(str(value))
+
+
+def claim_information_html(state: dict | None, analyzing: str | None = None) -> str:
+    data = (state or {}).get("data", {})
+    captured = sum(
+        data.get(field) is not None for _, fields in CLAIM_SECTIONS for field, _ in fields
+    )
+    percent = round(captured * 100 / CLAIM_FIELD_COUNT)
+    content = [
+        '<div class="claim-progress-copy">'
+        f"{captured} informations sur {CLAIM_FIELD_COUNT} recueillies</div>",
+        f'<div class="claim-progress"><span style="width:{percent}%"></span></div>',
+    ]
+    for section, fields in CLAIM_SECTIONS:
+        content.append(f'<section class="claim-section"><h3>{section}</h3>')
+        for field, label in fields:
+            value = data.get(field)
+            if field == analyzing:
+                badge = '<span class="field-state analyzing">Analyse…</span>'
+            elif value is not None:
+                badge = '<span class="field-state captured">✓ Enregistré</span>'
+            else:
+                badge = '<span class="field-state missing">À demander</span>'
+            content.append(
+                '<div class="claim-field">'
+                f"<div><small>{label}</small><strong>"
+                f"{_display_claim_value(field, value)}</strong></div>"
+                f"{badge}</div>"
+            )
+        content.append("</section>")
+    return "".join(content)
+
+
+def current_question_text(state: dict | None) -> str:
+    field = (state or {}).get("current_field")
+    return QUESTION_TEMPLATES.get(field, "Toutes les informations principales sont recueillies.")
+
+
+def persist_conversation(state: dict) -> tuple[dict, str | None]:
+    try:
+        data = validated_data(state).model_dump(mode="json")
+        result = api.create_conversation_claim(
+            "", data, state.get("transcript", []), state.get("claim_id")
+        )
+    except (APIError, ValueError) as exc:
+        return state, str(exc)
+    return {**state, "claim_id": result["claim_id"]}, None
+
+
+def activity_html(mode: str) -> str:
+    if mode == "speaking":
+        return '<div class="activity speaking">🔊 <strong>L’agent parle</strong></div>'
+    if mode == "listening":
+        bars = "".join("<i></i>" for _ in range(14))
+        return (
+            '<div class="activity listening">🎤 <strong>Je vous écoute</strong>'
+            f'<div class="waveform">{bars}</div></div>'
+        )
+    if mode == "processing":
+        return (
+            '<div class="activity processing"><strong>Analyse de votre réponse…</strong>'
+            "<ol><li>✓ Transcription</li><li>● Compréhension</li>"
+            "<li>○ Enregistrement</li></ol></div>"
+        )
+    if mode == "complete":
+        return '<div class="activity complete">✓ <strong>Déclaration enregistrée</strong></div>'
+    return '<div class="activity ready"><strong>Prêt à commencer</strong></div>'
+
+
+def start_poc_call():
+    state = new_conversation()
+    return (
+        state,
+        [(None, WELCOME_MESSAGE)],
+        claim_information_html(state),
+        "🔊 L’agent vous parle",
+        activity_html("speaking"),
+        current_question_text(state),
+        gr.update(interactive=True),
+        gr.update(interactive=False),
+        gr.update(interactive=True),
+        WELCOME_MESSAGE,
+    )
+
+
+def mark_listening(state: dict | None = None):
+    if state and state.get("current_field") is None:
+        return "✓ Déclaration terminée", activity_html("complete")
+    return "🎤 Je vous écoute", activity_html("listening")
+
+
+def stop_poc_call():
+    return (
+        "Prêt",
+        activity_html("ready"),
+        gr.update(interactive=False, value=None),
+        gr.update(interactive=True),
+        gr.update(interactive=False),
+    )
+
+
+def reset_poc_call():
+    state = new_conversation()
+    return (
+        state,
+        [(None, CALL_IDLE_MESSAGE)],
+        claim_information_html(state),
+        current_question_text(state),
+        "Prêt",
+        activity_html("ready"),
+        "",
+        gr.update(interactive=False, value=None),
+        gr.update(interactive=True),
+        gr.update(interactive=False),
+    )
+
+
+def apply_gps_location(latitude, longitude, state: dict, history: list):
+    if latitude is None or longitude is None:
+        raise gr.Error("Position GPS indisponible ou permission refusée.")
+    place, distance = nearest_place(float(latitude), float(longitude))
+    state = dict(state or new_conversation())
+    if state.get("current_field") == "lieu":
+        reply, state = respond(place, state)
+        history = (history or []) + [(f"Position GPS : {place}", reply)]
+    else:
+        data = dict(state.get("data", {}))
+        data["lieu"] = place
+        state["data"] = data
+        history = (history or []) + [(f"Position GPS proposée : {place}", None)]
+    state, persistence_error = persist_conversation(state)
+    notice = f"Zone GPS proposée : {place} (centre de référence à {distance} km)."
+    if persistence_error:
+        notice += f" Enregistrement SQLite en attente : {persistence_error}"
+    return state, history, claim_information_html(state), current_question_text(state), notice
+
+
+def process_poc_voice(audio_path: str | None, history: list, conversation: dict):
+    field = (conversation or {}).get("current_field")
+    yield (
+        "Analyse de votre réponse…",
+        activity_html("processing"),
+        "Transcription en cours…",
+        history or [],
+        conversation,
+        claim_information_html(conversation, field),
+        current_question_text(conversation),
+        "",
+        None,
+    )
+    try:
+        if not audio_path:
+            raise gr.Error("Aucune réponse vocale enregistrée.")
+        segments = Transcriber(get_settings(), profile="fast").transcribe(Path(audio_path))
+        transcript = " ".join(segment.text for segment in segments).strip()
+        if not transcript:
+            raise gr.Error("Aucune parole n’a été détectée.")
+    except TranscriptionError as exc:
+        raise gr.Error(str(exc)) from exc
+    visible_history = (history or []) + [(transcript, None)]
+    yield (
+        "Analyse de votre réponse…",
+        activity_html("processing"),
+        transcript,
+        visible_history,
+        conversation,
+        claim_information_html(conversation, field),
+        current_question_text(conversation),
+        "",
+        None,
+    )
+    reply, conversation = respond(transcript, conversation)
+    visible_history[-1] = (transcript, reply)
+    conversation, persistence_error = persist_conversation(conversation)
+    complete = conversation.get("current_field") is None
+    final_status = "✓ Déclaration terminée" if complete else "🔊 L’agent vous parle"
+    if persistence_error:
+        final_status = "⚠️ Réponse comprise — enregistrement SQLite échoué"
+    yield (
+        final_status,
+        activity_html("complete" if complete else "speaking"),
+        transcript,
+        visible_history,
+        conversation,
+        claim_information_html(conversation),
+        current_question_text(conversation),
+        reply,
+        None,
+    )
+
+
+def build_legacy_app() -> gr.Blocks:
     css = (UI_DIR / "style.css").read_text(encoding="utf-8")
     with gr.Blocks(
         title="E-Constat IA",
@@ -251,21 +620,144 @@ def build_app() -> gr.Blocks:
     ) as demo:
         session = gr.State({})
         call_id = gr.State("")
+        conversation = gr.State(new_conversation())
         gr.Markdown(
             "# E-Constat IA\nTraitement différé sur CPU — "
             "**l’IA propose, l’humain corrige et valide.**",
             elem_id="asaci-header",
         )
-        identity = gr.Markdown("Non connecté", elem_id="identity")
-        with gr.Tab("Connexion"):
-            username = gr.Textbox(label="Utilisateur", value="agent.demo")
-            password = gr.Textbox(label="Mot de passe", type="password")
+        with gr.Tab("📞 Appel en direct"):
+            gr.Markdown(
+                "## Appeler l’assistant sinistre\n"
+                "Décrochez : l’IA vous accueille à l’oral et pose la première question. "
+                "Après chaque réponse enregistrée, la transcription apparaît ici "
+                "immédiatement.",
+                elem_id="live-call-intro",
+            )
             with gr.Row():
-                login_btn = gr.Button("Se connecter", variant="primary")
-                logout_btn = gr.Button("Se déconnecter")
-            login_btn.click(login, [username, password], [session, identity])
-            logout_btn.click(logout, None, [session, identity])
-        with gr.Tab("Nouveau dossier"):
+                with gr.Column(scale=2):
+                    processing_status = gr.Markdown("🟢 Prêt", elem_id="agent-processing")
+                    with gr.Row():
+                        start_call_btn = gr.Button(
+                            "📞 Décrocher et démarrer", variant="primary", size="lg"
+                        )
+                        end_call_btn = gr.Button("⏹ Terminer l’appel", interactive=False, size="lg")
+                    chat = gr.Chatbot(
+                        value=[(None, CALL_IDLE_MESSAGE)],
+                        label="Appel, transcription et réponses de l’IA",
+                        height=520,
+                        elem_id="claim-chat",
+                    )
+                    with gr.Group():
+                        client_audio = gr.Audio(
+                            label=(
+                                "Microphone — transcription automatique dès la fin "
+                                "de chaque réponse"
+                            ),
+                            sources=["microphone"],
+                            type="filepath",
+                            interactive=False,
+                        )
+                        transcribed_text = gr.Textbox(
+                            label="Dernière transcription",
+                            interactive=False,
+                            placeholder="La transcription apparaîtra ici…",
+                        )
+                    gr.Markdown(
+                        "🔊 La réponse de l’agent est lue automatiquement par le navigateur."
+                    )
+                    spoken_reply = gr.Textbox(visible=False)
+                    message = gr.Textbox(
+                        label="Votre réponse",
+                        placeholder="Ex. Non, aucun blessé / Quels documents faut-il ?",
+                    )
+                    with gr.Row():
+                        send_message_btn = gr.Button("Envoyer", variant="primary")
+                        restart_btn = gr.Button("Recommencer")
+                with gr.Column(scale=1):
+                    gr.Markdown("### Récapitulatif en direct")
+                    conversation_summary = gr.Markdown(summary_markdown(new_conversation()))
+                    create_chat_claim_btn = gr.Button(
+                        "Créer le dossier à valider", variant="primary"
+                    )
+                    conversation_status = gr.Markdown()
+            text_event = send_message_btn.click(
+                send_chat_message,
+                [message, chat, conversation],
+                [
+                    message,
+                    chat,
+                    conversation,
+                    conversation_summary,
+                    spoken_reply,
+                    processing_status,
+                ],
+            )
+            text_event.then(None, spoken_reply, None, js=SPEAK_JS)
+            submit_event = message.submit(
+                send_chat_message,
+                [message, chat, conversation],
+                [
+                    message,
+                    chat,
+                    conversation,
+                    conversation_summary,
+                    spoken_reply,
+                    processing_status,
+                ],
+            )
+            submit_event.then(None, spoken_reply, None, js=SPEAK_JS)
+            voice_event = client_audio.stop_recording(
+                process_voice_message,
+                [client_audio, chat, conversation],
+                [
+                    processing_status,
+                    transcribed_text,
+                    chat,
+                    conversation,
+                    conversation_summary,
+                    spoken_reply,
+                    client_audio,
+                ],
+                show_progress="hidden",
+            )
+            voice_event.then(None, spoken_reply, None, js=SPEAK_JS)
+            start_event = start_call_btn.click(
+                start_live_call,
+                None,
+                [
+                    conversation,
+                    chat,
+                    conversation_summary,
+                    processing_status,
+                    client_audio,
+                    start_call_btn,
+                    end_call_btn,
+                    spoken_reply,
+                ],
+            )
+            start_event.then(None, spoken_reply, None, js=SPEAK_JS)
+            end_call_btn.click(
+                end_live_call,
+                None,
+                [processing_status, client_audio, start_call_btn, end_call_btn],
+            )
+            restart_btn.click(
+                restart_conversation,
+                None,
+                [
+                    conversation,
+                    chat,
+                    message,
+                    conversation_summary,
+                    spoken_reply,
+                    processing_status,
+                ],
+            )
+            create_chat_claim_btn.click(
+                create_claim_from_chat, [session, conversation], conversation_status
+            )
+        with gr.Tab("Import d’un appel"):
             audio = gr.Audio(
                 label="Audio d’appel (fichier ou microphone de démonstration)",
                 sources=["upload", "microphone"],
@@ -281,8 +773,15 @@ def build_app() -> gr.Blocks:
             refresh_jobs_btn = gr.Button("Actualiser")
             jobs_table = gr.Dataframe(
                 headers=[
-                    "Job", "Appel", "Profil", "Statut", "Étape", "Progression %",
-                    "Erreur", "Durée écoulée (s)", "Mise à jour",
+                    "Job",
+                    "Appel",
+                    "Profil",
+                    "Statut",
+                    "Étape",
+                    "Progression %",
+                    "Erreur",
+                    "Durée écoulée (s)",
+                    "Mise à jour",
                 ],
                 interactive=False,
             )
@@ -307,8 +806,12 @@ def build_app() -> gr.Blocks:
             save_speakers_btn = gr.Button("Enregistrer les rôles")
             fields = gr.Dataframe(
                 headers=[
-                    "Champ", "Proposition IA", "Preuve", "Confiance %",
-                    "Valeur courante", "Valeur validée",
+                    "Champ",
+                    "Proposition IA",
+                    "Preuve",
+                    "Confiance %",
+                    "Valeur courante",
+                    "Valeur validée",
                 ],
                 interactive=False,
                 label="Traçabilité des valeurs",
@@ -320,20 +823,14 @@ def build_app() -> gr.Blocks:
                 validate_btn = gr.Button("Valider humainement", variant="primary")
             action_status = gr.Markdown()
             hidden_history = gr.Dataframe(visible=False)
-            refresh_claims_btn.click(
-                refresh_claims, session, [claim_selector, hidden_history]
-            )
+            refresh_claims_btn.click(refresh_claims, session, [claim_selector, hidden_history])
             load_btn.click(
                 load_review,
                 [session, claim_selector],
                 [call_id, review_status, transcript, segments, fields, editable, missing],
             )
-            save_speakers_btn.click(
-                save_speakers, [session, call_id, segments], action_status
-            )
-            save_btn.click(
-                save_corrections, [session, claim_selector, editable], action_status
-            )
+            save_speakers_btn.click(save_speakers, [session, call_id, segments], action_status)
+            save_btn.click(save_corrections, [session, claim_selector, editable], action_status)
             validate_btn.click(validate_claim, [session, claim_selector], action_status)
         with gr.Tab("Export JSON et envoi mock"):
             claim_action_id = gr.Textbox(label="Identifiant de la déclaration validée")
@@ -342,16 +839,19 @@ def build_app() -> gr.Blocks:
                 send_btn = gr.Button("Envoyer au mock E-consta", variant="primary")
             json_file = gr.File(label="Export JSON")
             external_status = gr.Markdown()
-            json_btn.click(
-                generate_json, [session, claim_action_id], [json_file, external_status]
-            )
+            json_btn.click(generate_json, [session, claim_action_id], [json_file, external_status])
             send_btn.click(send_claim, [session, claim_action_id], external_status)
         with gr.Tab("Historique"):
             history_btn = gr.Button("Actualiser")
             history = gr.Dataframe(
                 headers=[
-                    "Déclaration", "Statut", "Assuré", "Lieu", "Confiance %",
-                    "Corrections", "Mise à jour",
+                    "Déclaration",
+                    "Statut",
+                    "Assuré",
+                    "Lieu",
+                    "Confiance %",
+                    "Corrections",
+                    "Mise à jour",
                 ],
                 interactive=False,
             )
@@ -368,15 +868,9 @@ def build_app() -> gr.Blocks:
                 dashboard_sent = gr.Number(label="Envoyés", interactive=False)
                 dashboard_errors = gr.Number(label="Erreurs", interactive=False)
             with gr.Row():
-                dashboard_time = gr.Number(
-                    label="Temps moyen de traitement (s)", interactive=False
-                )
-                dashboard_corrected = gr.Number(
-                    label="Dossiers corrigés (%)", interactive=False
-                )
-                dashboard_uncorrected = gr.Number(
-                    label="Sans correction (%)", interactive=False
-                )
+                dashboard_time = gr.Number(label="Temps moyen de traitement (s)", interactive=False)
+                dashboard_corrected = gr.Number(label="Dossiers corrigés (%)", interactive=False)
+                dashboard_uncorrected = gr.Number(label="Sans correction (%)", interactive=False)
             with gr.Row():
                 dashboard_types = gr.Code(language="json", label="Types d’accident")
                 dashboard_error_types = gr.Code(language="json", label="Erreurs par code")
@@ -403,10 +897,153 @@ def build_app() -> gr.Blocks:
     return demo
 
 
+def build_app() -> gr.Blocks:
+    css = (UI_DIR / "style.css").read_text(encoding="utf-8")
+    with gr.Blocks(
+        title="E-Constat IA",
+        theme=gr.themes.Soft(primary_hue="blue", neutral_hue="slate"),
+        css=css,
+    ) as demo:
+        conversation = gr.State(new_conversation())
+
+        with gr.Row(elem_id="poc-header"):
+            gr.Markdown(
+                "# E-Constat IA\nAgent conversationnel de déclaration de sinistre",
+                elem_id="poc-title",
+            )
+            gr.Markdown("Démonstration", elem_id="demo-badge")
+
+        conversation_status = gr.Markdown("Prêt", elem_id="conversation-status")
+
+        with gr.Row(elem_id="poc-workspace", equal_height=True):
+            with gr.Column(scale=4, elem_classes="poc-panel conversation-panel"):
+                gr.Markdown("## Conversation")
+                chat = gr.Chatbot(
+                    value=[(None, CALL_IDLE_MESSAGE)],
+                    label=None,
+                    height=590,
+                    elem_id="poc-conversation",
+                )
+                live_transcript = gr.Textbox(
+                    label="Dernière réponse transcrite",
+                    value="En attente de l’appel…",
+                    interactive=False,
+                    elem_id="live-transcript",
+                )
+
+            with gr.Column(scale=4, elem_classes="poc-panel question-panel"):
+                gr.Markdown("QUESTION ACTUELLE", elem_id="question-kicker")
+                current_question = gr.Markdown(
+                    current_question_text(new_conversation()), elem_id="current-question"
+                )
+                activity = gr.HTML(activity_html("ready"), elem_id="current-activity")
+                microphone = gr.Audio(
+                    label="Réponse vocale du client",
+                    sources=["microphone"],
+                    type="filepath",
+                    interactive=False,
+                    elem_id="poc-microphone",
+                )
+                gps_btn = gr.Button("Utiliser ma position GPS", size="sm")
+                gps_latitude = gr.Number(visible=False)
+                gps_longitude = gr.Number(visible=False)
+                gps_notice = gr.Markdown(elem_id="gps-notice")
+                spoken_reply = gr.Textbox(visible=False)
+                with gr.Row(elem_id="conversation-controls"):
+                    start_btn = gr.Button("Démarrer la déclaration", variant="primary", size="lg")
+                    stop_btn = gr.Button("Arrêter", interactive=False, size="lg")
+                restart_btn = gr.Button("Recommencer", size="sm")
+
+            with gr.Column(scale=4, elem_classes="poc-panel information-panel"):
+                gr.Markdown("## Informations recueillies")
+                claim_information = gr.HTML(
+                    claim_information_html(new_conversation()), elem_id="claim-information"
+                )
+
+        gr.HTML(
+            """
+            <div class="technical-status">
+              <span><b>STT</b> : Faster-Whisper</span>
+              <span><b>Base</b> : SQLite</span>
+              <span><b>Conversation</b> : JSON</span>
+              <span><b>Mode</b> : CPU</span>
+            </div>
+            """
+        )
+
+        start_event = start_btn.click(
+            start_poc_call,
+            None,
+            [
+                conversation,
+                chat,
+                claim_information,
+                conversation_status,
+                activity,
+                current_question,
+                microphone,
+                start_btn,
+                stop_btn,
+                spoken_reply,
+            ],
+        )
+        speech_finished = start_event.then(None, spoken_reply, None, js=SPEAK_JS)
+        speech_finished.then(mark_listening, conversation, [conversation_status, activity])
+
+        voice_event = microphone.stop_recording(
+            process_poc_voice,
+            [microphone, chat, conversation],
+            [
+                conversation_status,
+                activity,
+                live_transcript,
+                chat,
+                conversation,
+                claim_information,
+                current_question,
+                spoken_reply,
+                microphone,
+            ],
+            show_progress="hidden",
+        )
+        voice_finished = voice_event.then(None, spoken_reply, None, js=SPEAK_JS)
+        voice_finished.then(mark_listening, conversation, [conversation_status, activity])
+
+        gps_event = gps_btn.click(None, None, [gps_latitude, gps_longitude], js=GPS_JS)
+        gps_event.then(
+            apply_gps_location,
+            [gps_latitude, gps_longitude, conversation, chat],
+            [conversation, chat, claim_information, current_question, gps_notice],
+        )
+
+        stop_btn.click(
+            stop_poc_call,
+            None,
+            [conversation_status, activity, microphone, start_btn, stop_btn],
+        )
+        restart_btn.click(
+            reset_poc_call,
+            None,
+            [
+                conversation,
+                chat,
+                claim_information,
+                current_question,
+                conversation_status,
+                activity,
+                live_transcript,
+                microphone,
+                start_btn,
+                stop_btn,
+            ],
+        )
+    return demo
+
+
 demo = build_app()
 
 
 if __name__ == "__main__":
     demo.queue(default_concurrency_limit=4, max_size=32).launch(
-        server_name="127.0.0.1", server_port=UI_PORT
+        server_name=UI_HOST, server_port=UI_PORT
     )

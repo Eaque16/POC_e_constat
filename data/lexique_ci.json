@@ -1,7 +1,8 @@
 {
-  "lieux": ["Abidjan", "Cocody", "Yopougon", "Marcory", "Treichville", "Plateau", "Adjamé", "Abobo", "Bingerville", "Bouaké", "San-Pédro", "Yamoussoukro", "Grand-Bassam"],
+  "lieux": ["Abidjan", "Cocody", "Deux-Plateaux", "Riviera", "Angré", "Yopougon", "Marcory", "Treichville", "Plateau", "Adjamé", "Abobo", "Koumassi", "Port-Bouët", "Attécoubé", "Bingerville", "Anyama", "Songon", "Bouaké", "San-Pédro", "Yamoussoukro", "Grand-Bassam", "Daloa", "Korhogo", "Man", "Gagnoa", "Abengourou", "Bondoukou", "Divo", "Soubré", "Sassandra", "Dabou", "Agboville", "Aboisso", "Séguéla", "Odienné"],
   "termes": ["carrefour", "échangeur", "gbaka", "wôrô-wôrô", "boulevard Valéry Giscard d'Estaing", "pont Henri-Konan-Bédié"],
-  "assureurs": ["NSIA", "SUNU", "SanlamAllianz", "GNA Assurances", "Atlantique Assurances", "AXA"],
+  "assureurs": ["NSIA", "NSIA Assurances", "SUNU", "SUNU Assurances", "SanlamAllianz", "GNA Assurances", "Atlantique Assurances", "AXA", "AXA Côte d’Ivoire", "Allianz Côte d’Ivoire", "Leadway Assurance", "La Loyale Assurances", "SAHAM Assurance", "Saar Assurances", "Serenity Assurances", "Sidam", "MATCA", "2ACI", "MCI", "Wafa Assurance", "Coris Assurances", "Activa Assurances"],
+  "noms_ivoiriens": ["Kouassi", "Kouamé", "Koné", "Koffi", "Yao", "N’Guessan", "N'Dri", "Aka", "Amani", "Ahoua", "Adou", "Affoué", "Akissi", "Aya", "Awa", "Mariam", "Traoré", "Ouattara", "Bamba", "Fofana", "Diabaté", "Coulibaly", "Touré", "Bakayoko", "Doumbia", "Yacé", "Gbagbo", "Dago", "Zadi", "Gnahoré", "Kouadio", "Kouakou", "Kobenan", "Brou", "Niamien", "Assi", "Kacou"],
   "accidents": {
     "collision_arriere": ["percuté à l'arrière", "choc arrière", "rentré dedans par derrière"],
     "collision_frontale": ["choc frontal", "collision frontale"],

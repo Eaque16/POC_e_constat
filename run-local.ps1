@@ -35,7 +35,7 @@ $env:GRADIO_ANALYTICS_ENABLED = "False"
 $env:RECORDINGS_DIR = "data/recordings"
 $env:APP_ENV = "local"
 $env:ENABLE_LLM = "false"
-$env:DISABLE_AUTH = "false"
+$env:DISABLE_AUTH = "true"
 
 & $VenvPython -m econstat.local_bootstrap
 

@@ -88,3 +88,13 @@ class EConstatAPI:
 
     def dashboard(self, token: str) -> dict:
         return self._request("GET", "/dashboard", token)
+
+    def create_conversation_claim(
+        self, token: str, data: dict, transcript: list[str], claim_id: str | None = None
+    ) -> dict:
+        return self._request(
+            "POST",
+            "/conversations/claims",
+            token,
+            json={"data": data, "transcript": transcript, "claim_id": claim_id},
+        )

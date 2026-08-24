@@ -9,9 +9,18 @@ class LocalLexicon:
         self.entries = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
     def correct_place(self, value: str, threshold: int = 80) -> str:
-        places = self.entries.get("lieux", [])
-        match = process.extractOne(value, places, scorer=fuzz.WRatio)
+        return self.correct(value, "lieux", threshold)
+
+    def correct(self, value: str, category: str, threshold: int = 78) -> str:
+        entries = self.entries.get(category, [])
+        match = process.extractOne(value, entries, scorer=fuzz.WRatio, processor=str.casefold)
         return match[0] if match and match[1] >= threshold else value
+
+    def speech_vocabulary(self) -> list[str]:
+        values = []
+        for category in ("noms_ivoiriens", "assureurs", "lieux", "termes"):
+            values.extend(str(item) for item in self.entries.get(category, []))
+        return values
 
     def literal_match(self, transcript: str, category: str) -> tuple[str, str] | None:
         """Retourne la valeur canonique et l’extrait littéral réellement présent."""

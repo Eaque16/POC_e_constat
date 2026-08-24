@@ -11,6 +11,7 @@ from typing import Any
 
 from econstat.config import Settings
 from econstat.schemas.claim import TranscriptSegment
+from econstat.services.lexicon import LocalLexicon
 
 REQUIRED_MODEL_FILES = ("config.json", "model.bin", "tokenizer.json")
 CONFIDENCE_METHOD = "exp(avg_logprob), borné entre 0 et 1; indicateur ASR non calibré métier"
@@ -118,12 +119,18 @@ class Transcriber:
             raise TranscriptionError("audio_file_missing", "Fichier audio introuvable.")
         started = perf_counter()
         try:
+            vocabulary = LocalLexicon(self.settings.lexicon_path).speech_vocabulary()
+            # Le modèle tiny ne dispose que de 448 positions. Un prompt trop long fait
+            # échouer la génération avant même la première transcription.
+            hotwords = ", ".join(vocabulary)[:500]
             raw_segments, info = self._load().transcribe(
                 str(audio),
                 language=self.settings.whisper_language,
                 beam_size=self.beam_size,
                 vad_filter=True,
                 condition_on_previous_text=True,
+                initial_prompt="Déclaration automobile en Côte d’Ivoire.",
+                hotwords=hotwords,
             )
             segments = [
                 TranscriptSegment(

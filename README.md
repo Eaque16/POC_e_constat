@@ -1,7 +1,45 @@
 # E-Constat IA
 
-POC local Windows d’assistance à la déclaration de sinistre automobile. La cible est un PC CPU,
-sans dépendance obligatoire à CUDA, Docker, WSL2, Kafka, Redis ou Celery.
+## Assistant conversationnel client
+
+Le parcours principal est un dialogue guidé de pré-déclaration automobile. Il :
+
+- commence directement par l’identité et les informations de déclaration ;
+- répond aux questions fréquentes sur le constat, les pièces, les photos, le délai et le garage ;
+- recueille progressivement l’identité, le véhicule, la date, le lieu, les circonstances,
+  les dommages et la présence d’un tiers ;
+- affiche un récapitulatif et un taux d’avancement en direct ;
+- crée un dossier avec sa transcription, toujours soumis à une validation humaine.
+
+En mode local, aucune connexion n’est demandée. L’appel démarre depuis la première page :
+chaque prise microphone est transcrite automatiquement dès son arrêt, ajoutée au fil visible,
+puis traitée par l’agent qui affiche et lit sa réponse sur le même écran.
+
+L’assistant ne détermine ni la responsabilité ni le montant d’une indemnisation. Les délais et
+pièces pouvant dépendre du contrat, ses réponses invitent le client à confirmer auprès de son
+assureur.
+
+POC local d’assistance à la déclaration de sinistre automobile. La cible est un PC CPU sous
+Windows ou WSL2, sans dépendance obligatoire à CUDA, Kafka, Redis ou Celery.
+
+## Installation et lancement avec WSL2
+
+Depuis un terminal Ubuntu/WSL placé dans le dépôt :
+
+```bash
+sudo apt update
+sudo apt install -y python3.11 python3.11-venv ffmpeg
+bash setup.sh
+bash run-local.sh
+```
+
+Ouvrez ensuite `http://localhost:7860` depuis Windows. Le script reste au premier plan afin
+d’afficher que l’application tourne ; `Ctrl+C` arrête proprement l’interface, l’API et le serveur
+mock. Les journaux sont écrits dans `.runtime-wsl/`.
+
+L’environnement WSL utilise `.venv-wsl` et ne réutilise jamais `.venv`, qui contient des
+exécutables Windows incompatibles avec Linux. SQLite est utilisé par défaut, Docker n’est donc
+pas nécessaire pour cette démonstration.
 
 > Principe non négociable : l’IA propose. L’agent vérifie, corrige et valide. Aucun export JSON
 > ni envoi E-consta n’est autorisé avant une validation humaine explicite.
@@ -228,7 +266,7 @@ La correction exige la propriété du dossier et produit un audit sans contenu d
 L’ordre est fixe : règles déterministes, lexique ivoirien, validation Pydantic, complément Ollama,
 validation des preuves, confiance et champs manquants. Chaque valeur acceptée possède un extrait
 littéral stocké dans `Claim.evidence_json`. Les règles couvrent notamment identité, téléphone CI,
-assureur, date/heure, lieu, accident, véhicules, dommages, immobilisation, assistance, tiers et blessés.
+assureur, date/heure, lieu, accident, véhicules, dommages, immobilisation et tiers.
 
 Ollama doit retourner `{fields: {champ: {value, confidence, evidence}}}` en JSON strict. Un champ
 inconnu, une valeur invalide, une citation absente du transcript ou une valeur déterministe déjà

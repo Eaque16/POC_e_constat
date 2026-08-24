@@ -30,7 +30,13 @@ from econstat.schemas.call import (
     SpeakerCorrectionsRequest,
     SpeakerCorrectionsResponse,
 )
-from econstat.schemas.claim import ClaimData, ClaimReviewResponse, TranscriptSegment
+from econstat.schemas.claim import (
+    QUESTION_TEMPLATES,
+    REQUIRED_FIELDS,
+    ClaimData,
+    ClaimReviewResponse,
+    TranscriptSegment,
+)
 from econstat.schemas.dashboard import DashboardResponse
 from econstat.schemas.job import JobResponse
 from econstat.services.audio_validation import AudioValidationError, validate_and_store_audio
@@ -49,6 +55,12 @@ class ClaimUpdate(BaseModel):
 
 class TranscriptRequest(BaseModel):
     transcript: str
+
+
+class ConversationClaimRequest(BaseModel):
+    data: ClaimData
+    transcript: list[str]
+    claim_id: str | None = None
 
 
 def claim_review_response(claim: Claim) -> ClaimReviewResponse:
@@ -243,6 +255,64 @@ def process_call_audio(
     return job
 
 
+@router.post("/conversations/claims", status_code=201)
+def create_conversation_claim(
+    body: ConversationClaimRequest,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Transforme une conversation guidée en dossier soumis au contrôle humain."""
+    data = body.data.model_dump(mode="json")
+    missing = [field for field in REQUIRED_FIELDS if data.get(field) is None]
+    transcript = "\n".join(line.strip() for line in body.transcript if line.strip())
+    confidence = {field: 1.0 for field, value in data.items() if value is not None}
+    if body.claim_id:
+        claim = get_owned_claim_or_404(body.claim_id, user, db)
+        call = claim.call
+        call.transcript_text = transcript
+        claim.data_json = data
+        claim.confidence_json = confidence
+        claim.missing_fields_json = missing
+        claim.questions_json = [QUESTION_TEMPLATES[field] for field in missing]
+        claim.global_confidence = len(confidence) / len(REQUIRED_FIELDS)
+        action = "conversation_claim_updated"
+    else:
+        call = Call(
+            owner_id=user.id,
+            audio_path="conversation://chat",
+            transcript_text=transcript,
+            segments_json=[],
+            completed_at=datetime.now(UTC),
+        )
+        db.add(call)
+        db.flush()
+        claim = Claim(
+            call_id=call.id,
+            data_json=data,
+            confidence_json=confidence,
+            evidence_json={},
+            missing_fields_json=missing,
+            questions_json=[QUESTION_TEMPLATES[field] for field in missing],
+            global_confidence=len(confidence) / len(REQUIRED_FIELDS),
+            model_trace_json={"source": "guided_conversation", "ai_proposal": data},
+            status=ClaimStatus.pending_validation,
+        )
+        db.add(claim)
+        db.flush()
+        action = "conversation_claim_created"
+    db.add(
+        AuditLog(
+            user_id=user.id,
+            action=action,
+            entity_type="claim",
+            entity_id=claim.id,
+            details_json={"missing_fields": missing},
+        )
+    )
+    db.commit()
+    return {"claim_id": claim.id, "call_id": call.id, "missing_fields": missing}
+
+
 @router.put("/calls/{call_id}/speakers", response_model=SpeakerCorrectionsResponse)
 def correct_speaker_roles(
     call_id: str,
@@ -269,9 +339,7 @@ def correct_speaker_roles(
             update={"speaker": correction.speaker}
         )
     call.segments_json = [segment.model_dump(mode="json") for segment in segments]
-    call.transcript_text = "\n".join(
-        f"{segment.speaker}: {segment.text}" for segment in segments
-    )
+    call.transcript_text = "\n".join(f"{segment.speaker}: {segment.text}" for segment in segments)
     db.add(
         AuditLog(
             user_id=user.id,
@@ -458,7 +526,5 @@ def claim_json_export(
 
 
 @router.get("/dashboard", response_model=DashboardResponse)
-def dashboard(
-    _: User = Depends(responsable), db: Session = Depends(get_db)
-) -> DashboardResponse:
+def dashboard(_: User = Depends(responsable), db: Session = Depends(get_db)) -> DashboardResponse:
     return build_dashboard(db)
