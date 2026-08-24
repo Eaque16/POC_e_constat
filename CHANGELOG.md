@@ -7,6 +7,10 @@
   diagnostic Windows et script worker préparatoire.
 - Validation : 13 tests, Ruff et `pip check` réussis sur Python 3.11.9.
 - Limite explicite : l’IA reste partielle sans accès pyannote ; le worker SQL arrive en phase 5.
+- Phase 2 : schéma canonique `User`, `Call`, `Claim`, `ProcessingJob`, `AuditLog`, migration Alembic
+  `0002`, adoption prudente des bases historiques et seed idempotent.
+- Validation phase 2 : migration aller/retour, copie réelle avec conservation des données, CRUD,
+  contraintes de progression, Alembic check, 17 tests, Ruff et `pip check`.
 
 > Les entrées correspondent aux quatre itérations logiques. Git étant absent de la machine de
 > construction, elles restent à matérialiser en commits après installation des prérequis.

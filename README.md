@@ -9,9 +9,9 @@ sans dépendance obligatoire à CUDA, Docker, WSL2, Kafka, Redis ou Celery.
 ## État de la reprise
 
 La branche `rebuild/cpu-first` reconstruit progressivement l’ancien POC sans le supprimer avant
-remplacement vérifié. Les phases 0 et 1 couvrent le cadrage, la reproductibilité Windows et le
-diagnostic. Les fonctions métier historiques ne sont considérées livrées dans la nouvelle
-architecture qu’après leur phase dédiée.
+remplacement vérifié. Les phases 0 à 2 couvrent le cadrage, la reproductibilité Windows, le
+diagnostic et le modèle de données persistant avec file SQL. Les fonctions métier historiques ne
+sont considérées livrées dans la nouvelle architecture qu’après leur phase dédiée.
 
 - cœur Python local et 11 tests historiques opérationnels ;
 - CPU obligatoire, aucun GPU NVIDIA détecté sur la machine de construction ;
@@ -20,6 +20,7 @@ architecture qu’après leur phase dédiée.
 - Docker est hors du chemin critique ;
 - aucun benchmark métier n’a encore été exécuté ;
 - aucune performance et aucun résultat IA ne sont revendiqués sans mesure.
+- le schéma Alembic `0002` conserve les données historiques et ajoute `ProcessingJob`.
 
 ## Architecture cible
 
@@ -71,6 +72,20 @@ Copy-Item .env.example .env
 ```
 
 Ne jamais versionner de secret, token, audio client, base locale, modèle lourd ou PDF client.
+
+## Base de données locale
+
+L’initialisation applique les migrations Alembic puis crée les comptes de démonstration de manière
+idempotente :
+
+```powershell
+.\.venv\Scripts\python.exe -m econstat.local_bootstrap
+.\.venv\Scripts\python.exe -m alembic current
+.\.venv\Scripts\python.exe -m alembic check
+```
+
+Une base historique non versionnée n’est adoptée automatiquement que si ses tables et colonnes
+correspondent exactement au schéma connu. Un schéma inconnu est refusé sans modification.
 
 ## Démarrage prévu
 

@@ -78,6 +78,18 @@ des frontières testables avec moins de déploiements et de défaillances résea
 - Une reprise vérifie le checkpoint avant de recalculer.
 - Transitions et erreurs auditées sans secrets ni contenu audio dans les logs.
 
+## Modèle persistant
+
+- `User` porte l’identité et le rôle.
+- `Call` appartient à un utilisateur et conserve chemin, hash, durée, transcription et segments.
+- `ProcessingJob` porte profil, état, progression, verrou, tentatives, erreur et checkpoints temporels.
+- `Claim` conserve données, confiances, preuves, manques, questions et validation humaine.
+- `AuditLog` conserve les actions pertinentes avec des détails JSON minimaux.
+
+La migration `0002` renomme les colonnes historiques vers ce vocabulaire canonique et maintient des
+alias ORM temporaires pour l’ancien code. Le bootstrap refuse d’adopter une base non versionnée dont
+le schéma n’est pas reconnu.
+
 ## Sécurité et données
 
 - Contrôle de propriété centralisé pour appels et déclarations.
