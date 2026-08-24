@@ -1,0 +1,57 @@
+{
+  "dataset_version": "synthetic-text-v1",
+  "description": "Transcriptions entièrement synthétiques pour la baseline des règles métier.",
+  "cases": [
+    {
+      "id": "syn-001",
+      "groups": ["bruit_faible", "un_locuteur", "appel_court"],
+      "transcript": "Je suis Awa Koné. Ma plaque est AB 1234 CI. Accident à Cocody avec deux véhicules et aucun blessé.",
+      "ground_truth": {
+        "nom_assure": "Awa Koné",
+        "plaque": "AB 1234 CI",
+        "lieu": "Cocody",
+        "nombre_vehicules": 2,
+        "tiers_impliques": true,
+        "circonstances": "Accident à Cocody avec deux véhicules et aucun blessé.",
+        "blesses": false
+      }
+    },
+    {
+      "id": "syn-002",
+      "groups": ["formulation_ivoirienne", "un_locuteur", "appel_court"],
+      "transcript": "Mon assureur est SUNU, ça s'est passé au Plateau. Le véhicule ne roule plus et je demande un remorquage.",
+      "ground_truth": {
+        "assureur": "SUNU",
+        "lieu": "Plateau",
+        "vehicule_immobilise": true,
+        "besoin_assistance": true
+      }
+    },
+    {
+      "id": "syn-003",
+      "groups": ["hesitations", "plusieurs_locuteurs", "appel_court"],
+      "transcript": "AGENT: Combien de véhicules ? ASSURE: Euh, deux véhicules. Il y a un tiers mais pas de blessé.",
+      "ground_truth": {
+        "nombre_vehicules": 2,
+        "tiers_impliques": true,
+        "blesses": false
+      }
+    },
+    {
+      "id": "syn-004",
+      "groups": ["formulation_non_couverte", "un_locuteur", "appel_court"],
+      "transcript": "Mon numéro est zéro sept zéro huit zéro neuf dix onze.",
+      "ground_truth": {
+        "telephone_assure": "0708091011"
+      }
+    },
+    {
+      "id": "syn-005",
+      "groups": ["champs_absents", "un_locuteur", "appel_court"],
+      "transcript": "J'ai eu un petit accident ce matin.",
+      "ground_truth": {
+        "circonstances": "J'ai eu un petit accident ce matin."
+      }
+    }
+  ]
+}

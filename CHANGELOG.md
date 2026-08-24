@@ -1,5 +1,14 @@
 # Changelog
 
+## Phase 13 — Benchmark reproductible
+
+- Script hors réseau par défaut avec registre JSON d’expériences.
+- WER, DER non chevauchant, précision, rappel, F1, hallucinations et corrections.
+- Temps ASR/extraction, facteur temps réel et pic mémoire Python.
+- Métriques par sous-groupe et statuts explicites lorsque l’annotation manque.
+- Traçabilité Git, dépendances, dataset, modèle, seed, profil et machine.
+- Baseline textuelle synthétique versionnée ; aucun résultat audio client.
+
 ## Phase 12 — Tests end-to-end
 
 - Parcours complet authentifié de l’upload synthétique à l’envoi mock et au dashboard.

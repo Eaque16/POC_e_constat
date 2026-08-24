@@ -44,3 +44,22 @@ ont été rejetées et les résultats déterministes conservés. Aucun chiffre d
 Le dépôt ne contient pas d'audios réels et aucune mesure n'a été inventée. Compléter ce tableau
 après exécution sur le CPU cible constitue le critère d'acceptation de la phase d'évaluation.
 Seuils POC proposés : WER ≤ 20 %, F1 champs critiques ≥ 0,85, aucun fait halluciné accepté.
+
+## Commande reproductible
+
+Baseline des règles, hors réseau et sans modèle :
+
+```powershell
+.\.venv\Scripts\python.exe scripts\benchmark.py `
+  --manifest data\demo\benchmark_manifest.json `
+  --profile fast
+```
+
+L’option `--run-asr` n’est autorisée que si chaque cas possède `audio_path` et
+`reference_transcript`, et si le modèle configuré est déjà présent localement. Le script ne change
+pas `ALLOW_MODEL_DOWNLOADS`. Chaque résultat enregistre le commit, l’état propre ou sale de Git,
+les hashes du lock et du manifeste, Python, la machine, le profil, la seed et les paramètres.
+
+Le manifeste versionné `synthetic-text-v1` mesure uniquement la baseline d’extraction sur cinq
+transcriptions synthétiques. Il ne permet pas de calculer le WER ou le DER : ces valeurs restent
+explicitement `null`, avec un statut expliquant l’annotation absente.
