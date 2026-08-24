@@ -107,6 +107,7 @@ async def process_processing_job(db: Session, job: ProcessingJob, settings: Sett
             claim = call.claim or Claim(call_id=call.id)
             claim.data_json = extraction.data.model_dump(mode="json")
             claim.confidence_json = extraction.field_confidences
+            claim.evidence_json = extraction.evidence
             claim.missing_fields_json = extraction.missing_fields
             claim.questions_json = extraction.suggested_questions
             claim.global_confidence = extraction.overall_confidence

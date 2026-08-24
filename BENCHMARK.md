@@ -27,6 +27,13 @@ La voix `flite` disponible est anglophone et prononce mal le français ; sa tran
 permet pas d’estimer le WER français. Elle confirme seulement segments, horodatage et score. Les
 mesures montrent que `quality` doit rester différé sur cette machine.
 
+### Extraction Ollama exploratoire
+
+Sur le transcript synthétique « assureur SUNU, accident au Plateau, aucun blessé », les règles ont
+extrait quatre champs avec preuves. `qwen3:4b` a d’abord atteint le timeout de 120 s avec le schéma
+complet, puis a répondu avec un contenu non JSON après compactage du prompt. Les deux sorties LLM
+ont été rejetées et les résultats déterministes conservés. Aucun chiffre de qualité LLM n’en est déduit.
+
 ## Résultats métier à mesurer
 
 | Variante | WER global | WER accent CI | F1 extraction | DER | Date |

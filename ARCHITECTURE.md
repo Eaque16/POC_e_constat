@@ -102,6 +102,16 @@ qu’une exception globale. Le cache du pipeline est séparé du cache Whisper.
 heuristique explicitement tracée. Un segment sans chevauchement reste `INCONNU`. L’API de correction
 humaine modifie les segments et reconstruit le transcript, avec contrôle propriétaire et audit.
 
+## Extraction hybride
+
+`extraction_rules` produit valeur, confiance initiale, preuve littérale et identifiant de règle.
+`lexicon` fournit les lieux, assureurs et formulations ivoiriennes. `extraction_llm` ne complète que
+via un contrat JSON strict et filtre les preuves avant la fusion. `extraction` valide chaque valeur
+avec `ClaimData`, conserve la priorité des règles, calcule complétude/confiance et génère les questions.
+
+Le worker persiste séparément données, confiances, preuves, manques, questions et trace du modèle.
+Une indisponibilité Ollama ne modifie pas le statut du job et ne supprime aucun résultat déterministe.
+
 ## Modèle persistant
 
 - `User` porte l’identité et le rôle.

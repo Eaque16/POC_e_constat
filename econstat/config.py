@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     vram_threshold_14b_gb: float = 16
     vram_threshold_27b_gb: float = 20
     llm_temperature: float = 0.0
+    llm_timeout_seconds: float = 120.0
     enable_llm: bool = True
     disable_auth: bool = False
     llm_seed: int = 42

@@ -159,6 +159,7 @@ async def test_pipeline_persists_each_checkpoint_with_explicit_diarization_fallb
             return ClaimExtraction(
                 data=ClaimData(plaque="AB 123 CI"),
                 field_confidences={"plaque": 0.9},
+                evidence={"plaque": "plaque AB 123 CI"},
                 missing_fields=["lieu"],
                 suggested_questions=["Où ?"],
                 overall_confidence=0.9,
@@ -195,6 +196,7 @@ async def test_pipeline_persists_each_checkpoint_with_explicit_diarization_fallb
         assert claimed.locked_at is None
         claim = db.scalar(select(Claim).where(Claim.call_id == call.id))
         assert claim.data_json["plaque"] == "AB 123 CI"
+        assert claim.evidence_json == {"plaque": "plaque AB 123 CI"}
         assert call.segments_json[0]["speaker"] == "INCONNU"
         diarization_audit = db.scalar(
             select(AuditLog).where(AuditLog.action == "diarization_completed")

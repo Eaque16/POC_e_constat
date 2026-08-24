@@ -160,6 +160,7 @@ async def create_demo_call(
         call_id=call.id,
         data=result.data.model_dump(mode="json"),
         field_confidences=result.field_confidences,
+        evidence_json=result.evidence,
         missing_fields=result.missing_fields,
         suggested_questions=result.suggested_questions,
         confidence_score=result.overall_confidence,

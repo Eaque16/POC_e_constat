@@ -142,3 +142,17 @@ désigne toujours la prochaine étape à exécuter.
 **Conséquences** : la qualité de séparation reste partielle tant qu’elle n’est pas mesurée sur corpus.
 
 **Réversibilité** : le moteur et l’heuristique peuvent évoluer derrière leurs contrats actuels.
+
+## ADR-014 — Priorité aux règles et preuve littérale obligatoire
+
+**Contexte** : un LLM local peut être lent, indisponible, mal formé ou inventer un fait plausible.
+
+**Options** : LLM seul ; fusion permissive ; règles prioritaires et preuve vérifiée.
+
+**Choix** : le LLM complète seulement les champs absents et chaque citation doit exister littéralement.
+
+**Pourquoi** : une indisponibilité ne bloque pas le métier et une proposition invérifiable est rejetée.
+
+**Conséquences** : certains faits paraphrasés restent manquants et nécessitent une correction humaine.
+
+**Réversibilité** : les règles et le client LLM sont séparés et peuvent évoluer indépendamment.

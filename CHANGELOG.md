@@ -31,6 +31,10 @@
   attribution heuristique tracée et correction humaine des rôles avec contrôle propriétaire.
 - Limite phase 7 : vraie diarisation non exécutée, car `HF_TOKEN` et configuration locale chargeable
   sont absents ; fallback local validé sans panne globale, avec 57 tests réussis.
+- Phase 8 : règles avec preuves, lexique CI enrichi, schéma métier étendu, client Ollama JSON strict,
+  validation littérale, fusion prioritaire, confiances, manques, questions et persistance des preuves.
+- Limite phase 8 : Ollama réel a expiré puis produit une sortie non JSON ; les deux essais ont été
+  rejetés sans perte des résultats déterministes ; 62 tests réussissent.
 
 > Les entrées correspondent aux phases livrées sur la branche `rebuild/cpu-first` avec un commit
 > logique par phase.

@@ -1,4 +1,13 @@
 {
   "lieux": ["Abidjan", "Cocody", "Yopougon", "Marcory", "Treichville", "Plateau", "Adjamé", "Abobo", "Bingerville", "Bouaké", "San-Pédro", "Yamoussoukro", "Grand-Bassam"],
-  "termes": ["carrefour", "échangeur", "gbaka", "wôrô-wôrô", "boulevard Valéry Giscard d'Estaing", "pont Henri-Konan-Bédié"]
+  "termes": ["carrefour", "échangeur", "gbaka", "wôrô-wôrô", "boulevard Valéry Giscard d'Estaing", "pont Henri-Konan-Bédié"],
+  "assureurs": ["NSIA", "SUNU", "SanlamAllianz", "GNA Assurances", "Atlantique Assurances", "AXA"],
+  "accidents": {
+    "collision_arriere": ["percuté à l'arrière", "choc arrière", "rentré dedans par derrière"],
+    "collision_frontale": ["choc frontal", "collision frontale"],
+    "sortie_de_route": ["sortie de route", "quitté la chaussée"],
+    "accrochage": ["accrochage", "éraflé", "rayé"]
+  },
+  "assistance": ["remorquage", "dépanneuse", "assistance"],
+  "immobilisation": ["ne roule plus", "immobilisé", "ne démarre plus"]
 }

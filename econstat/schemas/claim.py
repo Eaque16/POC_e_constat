@@ -23,6 +23,7 @@ class ThirdParty(BaseModel):
 class ClaimData(BaseModel):
     nom_assure: str | None = None
     telephone_assure: str | None = None
+    assureur: str | None = None
     lieu: str | None = None
     date_accident: date | None = None
     heure_accident: time | None = None
@@ -33,8 +34,11 @@ class ClaimData(BaseModel):
     vehicule_immobilise: bool | None = None
     plaque: str | None = None
     besoin_assistance: bool | None = None
+    tiers_impliques: bool | None = None
     tiers: list[ThirdParty] = Field(default_factory=list)
     circonstances: str | None = None
+    blesses: bool | None = None
+    informations_complementaires: str | None = None
 
     @field_validator("plaque")
     @classmethod
@@ -51,6 +55,7 @@ class ExtractedValue(BaseModel):
 class ClaimExtraction(BaseModel):
     data: ClaimData
     field_confidences: dict[str, float] = Field(default_factory=dict)
+    evidence: dict[str, str] = Field(default_factory=dict)
     missing_fields: list[str] = Field(default_factory=list)
     suggested_questions: list[str] = Field(default_factory=list)
     overall_confidence: float = Field(default=0.0, ge=0, le=1)
@@ -59,6 +64,8 @@ class ClaimExtraction(BaseModel):
 
 REQUIRED_FIELDS = (
     "nom_assure",
+    "telephone_assure",
+    "assureur",
     "lieu",
     "date_accident",
     "heure_accident",
@@ -69,11 +76,15 @@ REQUIRED_FIELDS = (
     "vehicule_immobilise",
     "plaque",
     "besoin_assistance",
+    "tiers_impliques",
     "circonstances",
+    "blesses",
 )
 
 QUESTION_TEMPLATES = {
     "nom_assure": "Pouvez-vous confirmer votre nom complet ?",
+    "telephone_assure": "Quel numéro de téléphone pouvons-nous utiliser pour vous joindre ?",
+    "assureur": "Auprès de quel assureur votre véhicule est-il assuré ?",
     "lieu": "Où l'accident s'est-il produit précisément ?",
     "date_accident": "À quelle date l'accident a-t-il eu lieu ?",
     "heure_accident": "À quelle heure environ l'accident a-t-il eu lieu ?",
@@ -84,5 +95,7 @@ QUESTION_TEMPLATES = {
     "vehicule_immobilise": "Le véhicule peut-il encore rouler ?",
     "plaque": "Quelle est l'immatriculation de votre véhicule ?",
     "besoin_assistance": "Avez-vous besoin d'une assistance ou d'un remorquage ?",
+    "tiers_impliques": "Un tiers est-il impliqué dans l’accident ?",
     "circonstances": "Pouvez-vous décrire les circonstances de l'accident ?",
+    "blesses": "Y a-t-il des blessés ?",
 }

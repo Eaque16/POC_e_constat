@@ -9,8 +9,8 @@ sans dépendance obligatoire à CUDA, Docker, WSL2, Kafka, Redis ou Celery.
 ## État de la reprise
 
 La branche `rebuild/cpu-first` reconstruit progressivement l’ancien POC sans le supprimer avant
-remplacement vérifié. Les phases 0 à 7 couvrent le cadrage, la reproductibilité Windows, le
-diagnostic, les données, la sécurité, l’ingestion, les jobs, la transcription et le fallback de diarisation. Les fonctions historiques ne sont
+remplacement vérifié. Les phases 0 à 8 couvrent le cadrage, l’environnement, les données, la
+sécurité, l’ingestion, les jobs, la transcription, la diarisation optionnelle et l’extraction hybride. Les fonctions historiques ne sont
 considérées livrées dans la nouvelle architecture qu’après leur phase dédiée.
 
 - cœur Python local et 11 tests historiques opérationnels ;
@@ -25,6 +25,7 @@ considérées livrées dans la nouvelle architecture qu’après leur phase déd
 - l’upload crée atomiquement un job SQL ; le worker indépendant persiste progression et checkpoints.
 - les profils Whisper `fast` et `quality` utilisent uniquement les modèles CTranslate2 locaux configurés.
 - pyannote est facultatif ; son indisponibilité produit `INCONNU` avec une cause auditée.
+- l’extraction déterministe reste fonctionnelle si Ollama est lent, absent ou non conforme.
 
 ## Architecture cible
 
@@ -180,6 +181,19 @@ PUT /api/calls/{call_id}/speakers
 ```
 
 La correction exige la propriété du dossier et produit un audit sans contenu de transcription.
+
+## Extraction métier et preuves
+
+L’ordre est fixe : règles déterministes, lexique ivoirien, validation Pydantic, complément Ollama,
+validation des preuves, confiance et champs manquants. Chaque valeur acceptée possède un extrait
+littéral stocké dans `Claim.evidence_json`. Les règles couvrent notamment identité, téléphone CI,
+assureur, date/heure, lieu, accident, véhicules, dommages, immobilisation, assistance, tiers et blessés.
+
+Ollama doit retourner `{fields: {champ: {value, confidence, evidence}}}` en JSON strict. Un champ
+inconnu, une valeur invalide, une citation absente du transcript ou une valeur déterministe déjà
+présente est rejeté. Une panne, un timeout ou un JSON malformé laisse les règles terminer le dossier.
+Sur cette machine, `qwen3:4b` a atteint un timeout avec le schéma long puis renvoyé une sortie non
+JSON avec le prompt compact : le complément LLM réel reste donc `PARTIAL`.
 
 ## Parcours produit cible
 

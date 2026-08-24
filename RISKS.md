@@ -5,7 +5,7 @@
 | R01 | Traitement CPU lent | Élevée | Élevé | int8, profils, worker, benchmark, aucune promesse temps réel | Lead IA | Ouvert |
 | R02 | pyannote indisponible | Élevée | Moyen | fallback INCONNU, cause visible, correction humaine | Lead IA | Mitigé phase 7, capacité partielle |
 | R03 | Téléchargement modèle impossible | Moyenne | Élevé | modèles locaux, téléchargement explicite, hash | Tech Lead | Ouvert |
-| R04 | Hallucination du LLM | Moyenne | Élevé | règles, preuve littérale, score, validation humaine | Lead IA | Ouvert |
+| R04 | Hallucination du LLM | Moyenne | Élevé | règles prioritaires, preuve littérale, schéma strict, validation humaine | Lead IA | Mitigé phase 8 |
 | R05 | Exposition de données sensibles | Moyenne | Critique | Git ignore, stockage local, rétention, données synthétiques | Manager | Ouvert |
 | R06 | Contrôle d’accès insuffisant | Moyenne | Critique | propriété centralisée et tests inter-utilisateurs | Tech Lead | Maîtrisé phase 3 |
 | R07 | Dépendances Python incompatibles | Moyenne | Élevé | Python 3.11, `.venv`, versions figées, pip check | Tech Lead | Maîtrisé phase 1 |
@@ -19,6 +19,7 @@
 | R15 | Migration d’une base historique inconnue | Faible | Critique | détection stricte, refus par défaut, sauvegarde, test sur copie | Tech Lead | Maîtrisé phase 2 |
 | R16 | Bypass local conservé pour l’ancienne UI | Moyenne | Élevé | bind localhost, statut explicite, suppression prévue en phase 9 | Tech Lead | Accepté temporairement |
 | R17 | Score ASR interprété comme certitude métier | Moyenne | Élevé | score brut, méthode affichée, libellé non calibré, validation humaine | Lead IA | Maîtrisé phase 6 |
+| R18 | Ollama trop lent ou JSON invalide | Élevée | Moyen | timeout, rejet strict, règles seules, trace visible | Lead IA | Observé et mitigé phase 8 |
 
 ## Règle de maintenance
 
