@@ -10,6 +10,7 @@ class TranscriptSegment(BaseModel):
     speaker: Literal["AGENT", "ASSURE", "INCONNU"] = "INCONNU"
     text: str
     avg_logprob: float = -1.0
+    confidence: float = Field(default=0.0, ge=0, le=1)
 
 
 class ThirdParty(BaseModel):

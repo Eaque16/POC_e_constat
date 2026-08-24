@@ -9,8 +9,8 @@ sans dépendance obligatoire à CUDA, Docker, WSL2, Kafka, Redis ou Celery.
 ## État de la reprise
 
 La branche `rebuild/cpu-first` reconstruit progressivement l’ancien POC sans le supprimer avant
-remplacement vérifié. Les phases 0 à 5 couvrent le cadrage, la reproductibilité Windows, le
-diagnostic, le modèle de données, la sécurité API, l’ingestion audio et la file SQL. Les fonctions historiques ne sont
+remplacement vérifié. Les phases 0 à 6 couvrent le cadrage, la reproductibilité Windows, le
+diagnostic, le modèle de données, la sécurité API, l’ingestion, les jobs et la transcription CPU. Les fonctions historiques ne sont
 considérées livrées dans la nouvelle architecture qu’après leur phase dédiée.
 
 - cœur Python local et 11 tests historiques opérationnels ;
@@ -23,6 +23,7 @@ considérées livrées dans la nouvelle architecture qu’après leur phase déd
 - le schéma Alembic `0002` conserve les données historiques et ajoute `ProcessingJob`.
 - l’upload contrôle taille, extension, MIME, conteneur, piste et durée avant de créer l’appel.
 - l’upload crée atomiquement un job SQL ; le worker indépendant persiste progression et checkpoints.
+- les profils Whisper `fast` et `quality` utilisent uniquement les modèles CTranslate2 locaux configurés.
 
 ## Architecture cible
 
@@ -143,6 +144,26 @@ L’accès respecte la propriété du dossier. Une réservation SQL conditionnel
 de prendre le même job. Un job actif dont `updated_at` dépasse `JOB_STALE_MINUTES` revient en file
 avec son `current_step`. Le nombre de relances manuelles est limité par `JOB_MAX_RETRIES`.
 
+## Transcription CPU
+
+Le profil `fast` utilise `WHISPER_FAST_MODEL` avec un beam de 1 ; `quality` utilise
+`WHISPER_QUALITY_MODEL` avec un beam de 5. Le device reste `cpu`, le calcul `int8`, la langue `fr`
+et le VAD est actif. Une instance de modèle est partagée par profil/configuration dans chaque worker.
+
+Chaque segment contient `start`, `end`, `text`, `speaker`, `avg_logprob` et `confidence`. Cette
+confiance est `exp(avg_logprob)` borné entre 0 et 1 : c’est un indicateur ASR utile au tri humain,
+pas une probabilité métier calibrée. Le temps, le facteur temps réel, le modèle et les paramètres
+sont enregistrés dans l’audit `transcription_completed`.
+
+L’application ne télécharge jamais un modèle manquant. Téléchargement et empreintes sont des actions
+explicites :
+
+```powershell
+.\.venv\Scripts\python.exe scripts\download_models.py --source <depot-ct2> `
+  --destination models\<nom> --confirm-download
+.\.venv\Scripts\python.exe scripts\hash_models.py models\whisper-tiny
+```
+
 ## Parcours produit cible
 
 1. Connexion de l’agent.
@@ -166,8 +187,8 @@ avec son `current_step`. Le nombre de relances manuelles est limité par `JOB_MA
 
 ## Limites actuelles
 
-Le dépôt est un POC, pas un produit de production. La mécanique du worker est testée avec des
-composants IA synthétiques ; la transcription CPU réelle reste à qualifier en phase 6. Il ne dispose pas encore d’un corpus représentatif
+Le dépôt est un POC, pas un produit de production. La transcription CPU a été exécutée sur des
+audios synthétiques, mais sa précision métier n’est pas validée faute de corpus représentatif
 annoté, d’une vraie API E-consta, d’une téléphonie réelle, d’une revue RGPD, d’un audit de sécurité,
 de tests de charge ou de mesures de précision sur les accents ivoiriens. Le succès des tests unitaires
 ne prouve pas une aptitude à la production.

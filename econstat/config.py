@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     whisper_device: str = "cpu"
     whisper_compute_type: str = "int8"
     whisper_language: str = "fr"
+    whisper_fast_beam_size: int = 1
+    whisper_quality_beam_size: int = 5
     whisper_model: str = "bofenghuang/whisper-large-v3-french"
     whisper_revision: str = "e0e885752469ae13df3c68b2bc35b3fbe6293ae6"
     whisper_distil_model: str = "bofenghuang/whisper-large-v3-french-distil-dec16"

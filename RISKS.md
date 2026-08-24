@@ -18,6 +18,7 @@
 | R14 | Secret de développement hors local | Moyenne | Critique | variable obligatoire, `.env` ignoré, diagnostic sans valeur | Tech Lead | Ouvert |
 | R15 | Migration d’une base historique inconnue | Faible | Critique | détection stricte, refus par défaut, sauvegarde, test sur copie | Tech Lead | Maîtrisé phase 2 |
 | R16 | Bypass local conservé pour l’ancienne UI | Moyenne | Élevé | bind localhost, statut explicite, suppression prévue en phase 9 | Tech Lead | Accepté temporairement |
+| R17 | Score ASR interprété comme certitude métier | Moyenne | Élevé | score brut, méthode affichée, libellé non calibré, validation humaine | Lead IA | Maîtrisé phase 6 |
 
 ## Règle de maintenance
 

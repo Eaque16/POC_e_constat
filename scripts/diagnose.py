@@ -17,6 +17,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from econstat.config import Settings  # noqa: E402
+from econstat.services.transcription import local_model_missing_files  # noqa: E402
 
 
 def command_output(
@@ -136,8 +137,10 @@ def main() -> int:
         for name, path in paths.items()
     }
     database_ok, database = database_status(settings)
-    whisper_fast = Path(settings.whisper_fast_model).exists()
-    whisper_quality = Path(settings.whisper_quality_model).exists()
+    whisper_fast_missing = local_model_missing_files(Path(settings.whisper_fast_model))
+    whisper_quality_missing = local_model_missing_files(Path(settings.whisper_quality_model))
+    whisper_fast = not whisper_fast_missing
+    whisper_quality = not whisper_quality_missing
     pyannote_local = (settings.model_dir / "pyannote" / "config.yaml").exists()
     hf_token_present = bool(settings.hf_token)
     python_ok = sys.version_info[:2] == (3, 11)
@@ -177,8 +180,12 @@ def main() -> int:
     print(f"Ollama              : {ollama if ollama_ok else 'absent'}")
     print(f"Modèle Ollama       : {'présent' if configured_ollama else 'absent'}")
     print(f"HF_TOKEN            : {'présent' if hf_token_present else 'absent'}")
-    print(f"Whisper fast        : {'présent' if whisper_fast else 'absent'}")
-    print(f"Whisper quality     : {'présent' if whisper_quality else 'absent'}")
+    fast_state = "prêt" if whisper_fast else f"incomplet ({', '.join(whisper_fast_missing)})"
+    quality_state = (
+        "prêt" if whisper_quality else f"incomplet ({', '.join(whisper_quality_missing)})"
+    )
+    print(f"Whisper fast        : {fast_state}")
+    print(f"Whisper quality     : {quality_state}")
     print(f"pyannote local      : {'présent' if pyannote_local else 'absent'}")
     print(f"Base                : {'OK' if database_ok else 'ERREUR'} — {database}")
     for name, status in folders.items():

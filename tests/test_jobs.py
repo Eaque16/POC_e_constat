@@ -123,7 +123,13 @@ async def test_pipeline_persists_each_checkpoint_with_explicit_diarization_fallb
 
     class FakeTranscriber:
         def __init__(self, _settings, **_kwargs):
-            pass
+            self.last_trace = SimpleNamespace(
+                as_dict=lambda: {
+                    "profile": "fast",
+                    "elapsed_seconds": 1.25,
+                    "confidence_method": "synthetic-test",
+                }
+            )
 
         def transcribe(self, _audio):
             return [TranscriptSegment(start=0, end=1, text="plaque AB 123 CI", avg_logprob=-0.1)]
@@ -139,7 +145,7 @@ async def test_pipeline_persists_each_checkpoint_with_explicit_diarization_fallb
         def __init__(self, _settings):
             pass
 
-        async def extract(self, _transcript):
+        async def extract(self, _transcript, *_args):
             return ClaimExtraction(
                 data=ClaimData(plaque="AB 123 CI"),
                 field_confidences={"plaque": 0.9},
@@ -184,6 +190,10 @@ async def test_pipeline_persists_each_checkpoint_with_explicit_diarization_fallb
             select(AuditLog).where(AuditLog.action == "diarization_completed")
         )
         assert diarization_audit.details_json["fallback_unknown"] is True
+        transcription_audit = db.scalar(
+            select(AuditLog).where(AuditLog.action == "transcription_completed")
+        )
+        assert transcription_audit.details_json["elapsed_seconds"] == 1.25
 
 
 @pytest.mark.asyncio

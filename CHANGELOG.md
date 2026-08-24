@@ -23,6 +23,10 @@
   checkpoints, échec, retry borné, reprise stale, API de suivi propriétaire et worker indépendant.
 - Validation phase 5 : réservation exclusive, transitions monotones, reprise au checkpoint, erreur
   persistée, fallback diarisation et accès croisé ; 45 tests, pipeline IA simulé sans téléchargement.
+- Phase 6 : profils Faster-Whisper locaux CPU/int8, cache par processus, segments horodatés,
+  confiance ASR expliquée, trace de latence, diagnostic de complétude et scripts explicites de modèles.
+- Validation réelle phase 6 : `fast` et `quality` exécutés hors réseau sur audio synthétique ; temps
+  exploratoires documentés dans `BENCHMARK.md`, 52 tests, sans revendication de précision métier.
 
 > Les entrées correspondent aux phases livrées sur la branche `rebuild/cpu-first` avec un commit
 > logique par phase.

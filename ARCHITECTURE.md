@@ -85,6 +85,13 @@ Le worker se lance avec `python -m econstat.worker`; `--once` traite au plus un 
 diagnostic. Les uploads créent `Call` et `ProcessingJob` dans la même transaction. Les anciens
 endpoints de calcul direct ne lancent plus de charge IA depuis une requête HTTP.
 
+## Transcription
+
+`Transcriber` sélectionne le chemin local et le beam depuis le profil du job. Son cache par processus
+est indexé par chemin résolu, device et compute type. Il vérifie les fichiers CTranslate2 essentiels
+avant import/chargement et ne transforme jamais un chemin manquant en téléchargement implicite.
+Les segments et la trace opérationnelle sont persistés avant le checkpoint `diarizing`.
+
 ## Modèle persistant
 
 - `User` porte l’identité et le rôle.

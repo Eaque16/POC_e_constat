@@ -114,3 +114,17 @@ désigne toujours la prochaine étape à exécuter.
 **Conséquences** : chaque étape doit rester idempotente et utiliser la même session transactionnelle.
 
 **Réversibilité** : des checkpoints plus détaillés pourront être ajoutés si les mesures le justifient.
+
+## ADR-012 — Confiance Whisper comme indicateur non calibré
+
+**Contexte** : Faster-Whisper expose un log-score, pas une probabilité métier fiable.
+
+**Options** : masquer le score ; l’afficher comme probabilité ; publier une transformation expliquée.
+
+**Choix** : `exp(avg_logprob)` borné entre 0 et 1, conservé avec le score brut et sa méthode.
+
+**Pourquoi** : permet une lecture comparative sans présenter le score comme une certitude.
+
+**Conséquences** : l’interface et la documentation doivent toujours afficher cette limite.
+
+**Réversibilité** : une calibration sur corpus annoté pourra remplacer la transformation après mesure.

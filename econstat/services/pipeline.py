@@ -56,12 +56,19 @@ async def process_processing_job(db: Session, job: ProcessingJob, settings: Sett
             advance_job(db, job, ProcessingJobStatus.transcribing)
 
         if job.status == ProcessingJobStatus.transcribing:
-            segments = Transcriber(settings, profile=job.profile.value).transcribe(
-                Path(call.audio_path)
-            )
+            transcriber = Transcriber(settings, profile=job.profile.value)
+            segments = transcriber.transcribe(Path(call.audio_path))
             call.transcript_text = "\n".join(segment.text for segment in segments)
             call.segments_json = [segment.model_dump(mode="json") for segment in segments]
-            db.add(_audit(job, "transcription_completed", {"segments": len(segments)}))
+            trace = getattr(transcriber, "last_trace", None)
+            trace_details = trace.as_dict() if trace is not None else {}
+            db.add(
+                _audit(
+                    job,
+                    "transcription_completed",
+                    {"segments": len(segments), **trace_details},
+                )
+            )
             advance_job(db, job, ProcessingJobStatus.diarizing)
 
         if job.status == ProcessingJobStatus.diarizing:
@@ -87,7 +94,17 @@ async def process_processing_job(db: Session, job: ProcessingJob, settings: Sett
             advance_job(db, job, ProcessingJobStatus.extracting)
 
         if job.status == ProcessingJobStatus.extracting:
-            extraction = await HybridExtractor(settings).extract(call.transcript_text or "")
+            segment_confidences = [
+                float(item.get("confidence", 0)) for item in call.segments_json
+            ]
+            asr_confidence = (
+                sum(segment_confidences) / len(segment_confidences)
+                if segment_confidences
+                else 0.0
+            )
+            extraction = await HybridExtractor(settings).extract(
+                call.transcript_text or "", asr_confidence
+            )
             claim = call.claim or Claim(call_id=call.id)
             claim.data_json = extraction.data.model_dump(mode="json")
             claim.confidence_json = extraction.field_confidences
@@ -104,5 +121,6 @@ async def process_processing_job(db: Session, job: ProcessingJob, settings: Sett
         db.rollback()
         current = db.get(ProcessingJob, job.id)
         if current is not None:
-            fail_job(db, current, type(exc).__name__.lower(), str(exc) or type(exc).__name__)
+            error_code = getattr(exc, "code", type(exc).__name__.lower())
+            fail_job(db, current, error_code, str(exc) or type(exc).__name__)
         raise
