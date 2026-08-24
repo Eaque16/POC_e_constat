@@ -38,8 +38,9 @@ Gradio UI ---- polling HTTP ----> FastAPI
 
 ## Flux de traitement
 
-1. L’API stocke l’audio de façon sûre et crée `Call` et `ProcessingJob(queued)` en transaction.
-2. Le worker verrouille un job, inspecte le média avec ffprobe et calcule son SHA-256.
+1. L’API limite le flux, inspecte le média avec ffprobe, calcule son SHA-256, puis crée `Call`.
+   La création atomique du `ProcessingJob(queued)` sera ajoutée en phase 5.
+2. Le worker verrouille un job déjà validé et reprend à partir des checkpoints persistés.
 3. Il transcrit, persiste immédiatement le transcript et met à jour la progression.
 4. Il tente la diarisation. Un échec attendu produit le fallback `INCONNU` et une trace visible.
 5. Il applique règles et lexique, puis sollicite facultativement Ollama. Une valeur LLM sans preuve
@@ -98,6 +99,8 @@ le schéma n’est pas reconnu.
 - Le dashboard impose le rôle `responsable`.
 - Noms serveur générés par UUID.
 - Limites de taille, MIME, conteneur, durée et hash avant traitement.
+- Écriture temporaire puis renommage atomique ; nettoyage sur rejet ou échec de transaction SQL.
+- Audit minimal des acceptations et rejets, sans nom de fichier fourni par le client.
 - Aucun secret, audio réel, modèle lourd, base locale ou PDF client dans Git.
 - Données de test synthétiques ou anonymisées.
 

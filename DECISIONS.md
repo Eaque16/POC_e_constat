@@ -85,3 +85,17 @@
 **Conséquences** : les routes sensibles nécessitent une session et l’utilisateur courant.
 
 **Réversibilité** : une future politique ABAC pourra remplacer les helpers derrière le même contrat.
+
+## ADR-010 — Validation audio avant persistance métier
+
+**Contexte** : extension et MIME déclarés ne prouvent ni le conteneur réel ni la présence d’audio.
+
+**Options** : faire confiance au navigateur ; valider dans le worker ; valider avant de créer l’appel.
+
+**Choix** : flux borné vers un fichier temporaire, inspection `ffprobe`, hash, puis renommage UUID.
+
+**Pourquoi** : aucun `Call` ne référence un média invalide et les noms clients ne deviennent pas des chemins.
+
+**Conséquences** : FFmpeg/ffprobe est un prérequis explicite de l’ingestion et son absence renvoie 503.
+
+**Réversibilité** : l’inspecteur peut être remplacé derrière `audio_validation` sans changer le contrat API.

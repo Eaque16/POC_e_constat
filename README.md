@@ -9,8 +9,8 @@ sans dépendance obligatoire à CUDA, Docker, WSL2, Kafka, Redis ou Celery.
 ## État de la reprise
 
 La branche `rebuild/cpu-first` reconstruit progressivement l’ancien POC sans le supprimer avant
-remplacement vérifié. Les phases 0 à 3 couvrent le cadrage, la reproductibilité Windows, le
-diagnostic, le modèle de données et la sécurité API. Les fonctions métier historiques ne sont
+remplacement vérifié. Les phases 0 à 4 couvrent le cadrage, la reproductibilité Windows, le
+diagnostic, le modèle de données, la sécurité API et l’ingestion audio. Les fonctions historiques ne sont
 considérées livrées dans la nouvelle architecture qu’après leur phase dédiée.
 
 - cœur Python local et 11 tests historiques opérationnels ;
@@ -21,6 +21,7 @@ considérées livrées dans la nouvelle architecture qu’après leur phase déd
 - aucun benchmark métier n’a encore été exécuté ;
 - aucune performance et aucun résultat IA ne sont revendiqués sans mesure.
 - le schéma Alembic `0002` conserve les données historiques et ajoute `ProcessingJob`.
+- l’upload contrôle taille, extension, MIME, conteneur, piste et durée avant de créer l’appel.
 
 ## Architecture cible
 
@@ -104,6 +105,17 @@ l’existence d’une ressource tierce avec une réponse 404.
 
 Le lanceur historique conserve temporairement `DISABLE_AUTH=true` pour l’ancienne UI, qui ne possède
 pas encore d’écran de connexion. Cette exception locale sera retirée lors de la phase Interface.
+
+## Ingestion audio sécurisée
+
+`POST /api/calls` lit le fichier par blocs avec une limite stricte, vérifie le MIME déclaré puis
+inspecte réellement le conteneur, la piste et la durée avec `ffprobe`. Le nom fourni par le navigateur
+n’est jamais utilisé pour le stockage : le serveur génère un UUID, calcule le SHA-256 et ne crée
+l’appel qu’après validation complète. Un rejet supprime le fichier partiel et produit un audit sans
+conserver le nom client. La durée maximale se règle avec `MAX_AUDIO_DURATION_SECONDS`.
+
+Un `ffprobe` absent produit explicitement `503 / ffprobe_unavailable` ; aucun fichier n’est accepté
+sur la seule foi de son extension.
 
 ## Démarrage prévu
 

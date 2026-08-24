@@ -15,9 +15,13 @@
   propriété centralisés et protection de toutes les routes appel/déclaration.
 - Validation phase 3 : connexion, jetons invalides, accès croisés, rôle JWT falsifié, périmètre
   responsable, garde-fous PDF/envoi, 30 tests, Ruff et `pip check`.
+- Phase 4 : ingestion audio bornée, contrôle extension/MIME, inspection réelle avec `ffprobe`, durée,
+  stockage UUID, SHA-256, nettoyage transactionnel et audit minimal des acceptations/rejets.
+- Validation phase 4 : fichiers WAV valides, faux conteneurs, incohérence extension/conteneur,
+  fichier vide, limites de taille/durée et absence de `ffprobe`, 39 tests, Ruff et `pip check`.
 
-> Les entrées correspondent aux quatre itérations logiques. Git étant absent de la machine de
-> construction, elles restent à matérialiser en commits après installation des prérequis.
+> Les entrées correspondent aux phases livrées sur la branche `rebuild/cpu-first` avec un commit
+> logique par phase.
 
 ## 0.1.0 — 2026-08-20
 

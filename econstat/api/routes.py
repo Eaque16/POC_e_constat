@@ -1,4 +1,3 @@
-import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -16,7 +15,9 @@ from econstat.api.deps import (
 from econstat.config import get_settings
 from econstat.database import get_db
 from econstat.models import AuditLog, Call, Claim, ClaimStatus, User
+from econstat.schemas.call import CallUploadResponse
 from econstat.schemas.claim import ClaimData
+from econstat.services.audio_validation import AudioValidationError, validate_and_store_audio
 from econstat.services.diarization import Diarizer, align_and_label
 from econstat.services.econsta import EConstaClient
 from econstat.services.extraction import HybridExtractor
@@ -35,24 +36,65 @@ class TranscriptRequest(BaseModel):
     transcript: str
 
 
-@router.post("/calls", status_code=201)
+@router.post("/calls", status_code=201, response_model=CallUploadResponse)
 async def create_call(
     audio: UploadFile = File(...), user: User = Depends(current_user), db: Session = Depends(get_db)
-):
+) -> CallUploadResponse:
     settings = get_settings()
-    settings.upload_dir.mkdir(parents=True, exist_ok=True)
-    call = Call(owner_id=user.id, audio_path="pending")
+    try:
+        stored = validate_and_store_audio(audio, settings)
+    except AudioValidationError as exc:
+        db.add(
+            AuditLog(
+                user_id=user.id,
+                action="audio_upload_rejected",
+                entity_type="call",
+                entity_id="upload-rejected",
+                details_json={"error_code": exc.code},
+            )
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"code": exc.code, "message": exc.detail},
+        ) from exc
+
+    call = Call(
+        id=stored.storage_id,
+        owner_id=user.id,
+        audio_path=str(stored.path),
+        audio_sha256=stored.sha256,
+        duration_seconds=stored.duration_seconds,
+        segments_json=[],
+    )
     db.add(call)
-    db.flush()
-    suffix = Path(audio.filename or "audio.wav").suffix.lower()
-    if suffix not in {".wav", ".mp3", ".m4a", ".ogg", ".flac"}:
-        raise HTTPException(415, "Format audio non pris en charge")
-    target = settings.upload_dir / f"{call.id}{suffix}"
-    with target.open("wb") as stream:
-        shutil.copyfileobj(audio.file, stream)
-    call.audio_path = str(target)
-    db.commit()
-    return {"id": call.id, "status": "uploaded"}
+    db.add(
+        AuditLog(
+            user_id=user.id,
+            action="audio_uploaded",
+            entity_type="call",
+            entity_id=call.id,
+            details_json={
+                "size_bytes": stored.size_bytes,
+                "duration_seconds": stored.duration_seconds,
+                "mime_type": stored.mime_type,
+                "format_name": stored.format_name,
+                "sha256": stored.sha256,
+            },
+        )
+    )
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        stored.path.unlink(missing_ok=True)
+        raise
+    return CallUploadResponse(
+        id=call.id,
+        status="uploaded",
+        duration_seconds=stored.duration_seconds,
+        sha256=stored.sha256,
+    )
 
 
 @router.post("/calls/{call_id}/extract")
