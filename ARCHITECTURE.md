@@ -47,6 +47,8 @@ Gradio UI ---- polling HTTP ----> FastAPI
    littérale vérifiable est rejetée.
 6. Le job passe à `ready_for_review`. L’agent corrige et valide.
 7. L’API, le service d’export JSON et `EConstaClient` imposent la validation humaine.
+8. `EConstaClient` utilise une clé d’idempotence stable par déclaration et un identifiant de
+   corrélation par tentative ; le mock refuse une même clé associée à un contenu différent.
 
 ## Décisions structurantes
 

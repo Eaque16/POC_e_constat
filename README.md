@@ -121,6 +121,16 @@ Dans l’onglet **À valider**, la proposition IA, sa preuve littérale, sa conf
 et la valeur finalement validée sont distinguées. Les rôles de locuteur peuvent être corrigés.
 Une déclaration validée ou envoyée devient non modifiable côté API, même si l’interface est contournée.
 
+## Export JSON et mock E-consta
+
+Après validation humaine, `GET /api/claims/{id}/export-json` produit un fichier JSON UTF-8 versionné
+dans `generated/`. L’API et le service d’export possèdent chacun leur propre garde-fou.
+
+L’envoi `POST /api/claims/{id}/send` utilise la référence locale comme clé d’idempotence et ajoute un
+identifiant de corrélation. Une répétition retourne la référence externe existante. Les tentatives,
+succès, répétitions et échecs sont audités ; un timeout du mock est exposé en HTTP 504 et une autre
+erreur de communication en HTTP 502. Le timeout se règle avec `ECONSTA_TIMEOUT_SECONDS`.
+
 ## Ingestion audio sécurisée
 
 `POST /api/calls` lit le fichier par blocs avec une limite stricte, vérifie le MIME déclaré puis

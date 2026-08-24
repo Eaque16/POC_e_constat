@@ -1,3 +1,4 @@
+import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -32,7 +33,7 @@ from econstat.schemas.call import (
 from econstat.schemas.claim import ClaimData, ClaimReviewResponse, TranscriptSegment
 from econstat.schemas.job import JobResponse
 from econstat.services.audio_validation import AudioValidationError, validate_and_store_audio
-from econstat.services.econsta import EConstaClient
+from econstat.services.econsta import EConstaClient, EConstaError, EConstaTimeoutError
 from econstat.services.extraction import HybridExtractor
 from econstat.services.jobs import create_job
 from econstat.services.json_export import generate_claim_json
@@ -357,9 +358,58 @@ async def send_claim(
     claim_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)
 ):
     claim = get_owned_claim_or_404(claim_id, user, db)
+    if claim.status == ClaimStatus.sent and claim.external_id:
+        db.add(
+            AuditLog(
+                user_id=user.id,
+                action="econsta_idempotent_replay",
+                entity_type="claim",
+                entity_id=claim.id,
+                details_json={"external_id": claim.external_id},
+            )
+        )
+        db.commit()
+        return {
+            "id": claim.external_id,
+            "statut": "deja_envoye",
+            "idempotent_replay": True,
+        }
     if claim.status != ClaimStatus.validated or not claim.validated_by:
         raise HTTPException(409, "Une validation humaine explicite est obligatoire")
-    result = await EConstaClient(get_settings()).create_claim(claim.id, claim.data, True)
+    correlation_id = str(uuid.uuid4())
+    db.add(
+        AuditLog(
+            user_id=user.id,
+            action="econsta_send_attempted",
+            entity_type="claim",
+            entity_id=claim.id,
+            details_json={"correlation_id": correlation_id},
+        )
+    )
+    db.commit()
+    try:
+        result = await EConstaClient(get_settings()).create_claim(
+            claim.id,
+            claim.data,
+            True,
+            correlation_id=correlation_id,
+        )
+    except (EConstaTimeoutError, EConstaError) as exc:
+        db.add(
+            AuditLog(
+                user_id=user.id,
+                action="econsta_send_failed",
+                entity_type="claim",
+                entity_id=claim.id,
+                details_json={
+                    "correlation_id": correlation_id,
+                    "error_type": type(exc).__name__,
+                },
+            )
+        )
+        db.commit()
+        status_code = 504 if isinstance(exc, EConstaTimeoutError) else 502
+        raise HTTPException(status_code, str(exc)) from exc
     claim.external_id = result["id"]
     claim.status = ClaimStatus.sent
     db.add(
@@ -368,7 +418,10 @@ async def send_claim(
             action="sent_to_econsta",
             entity_type="claim",
             entity_id=claim.id,
-            details={"external_id": claim.external_id},
+            details={
+                "external_id": claim.external_id,
+                "correlation_id": correlation_id,
+            },
         )
     )
     db.commit()

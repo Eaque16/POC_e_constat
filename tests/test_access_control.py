@@ -238,6 +238,64 @@ def test_json_export_requires_validation_at_api_boundary(security_client):
     assert exported.json()["path"].endswith(".json")
 
 
+def test_validated_claim_export_send_and_replay_are_audited(
+    security_client, monkeypatch
+):
+    client, factory, data = security_client
+    headers = authorization(data.agent_a)
+
+    async def fake_create(_self, claim_id, _data, human_validated, *, correlation_id):
+        assert human_validated is True
+        assert correlation_id
+        return {"id": f"EXT-{claim_id}", "statut": "recu"}
+
+    monkeypatch.setattr(
+        "econstat.api.routes.EConstaClient.create_claim", fake_create
+    )
+    validation = client.post(f"/api/claims/{data.claim_a.id}/validate", headers=headers)
+    exported = client.get(
+        f"/api/claims/{data.claim_a.id}/export-json", headers=headers
+    )
+    sent = client.post(f"/api/claims/{data.claim_a.id}/send", headers=headers)
+    replay = client.post(f"/api/claims/{data.claim_a.id}/send", headers=headers)
+
+    assert validation.status_code == 200
+    assert exported.status_code == 200
+    assert sent.status_code == 200
+    assert replay.json()["idempotent_replay"] is True
+    assert replay.json()["id"] == sent.json()["id"]
+    with factory() as db:
+        actions = db.scalars(
+            select(AuditLog.action).where(AuditLog.entity_id == data.claim_a.id)
+        ).all()
+    assert "json_export_generated" in actions
+    assert "econsta_send_attempted" in actions
+    assert "sent_to_econsta" in actions
+    assert "econsta_idempotent_replay" in actions
+
+
+def test_econsta_failure_is_visible_and_audited(security_client, monkeypatch):
+    from econstat.services.econsta import EConstaTimeoutError
+
+    client, factory, data = security_client
+    headers = authorization(data.agent_a)
+
+    async def fail(*_args, **_kwargs):
+        raise EConstaTimeoutError("Le service E-consta n’a pas répondu à temps.")
+
+    monkeypatch.setattr("econstat.api.routes.EConstaClient.create_claim", fail)
+    client.post(f"/api/claims/{data.claim_a.id}/validate", headers=headers)
+    response = client.post(f"/api/claims/{data.claim_a.id}/send", headers=headers)
+
+    assert response.status_code == 504
+    with factory() as db:
+        actions = db.scalars(
+            select(AuditLog.action).where(AuditLog.entity_id == data.claim_a.id)
+        ).all()
+    assert "econsta_send_attempted" in actions
+    assert "econsta_send_failed" in actions
+
+
 def test_database_role_wins_over_forged_token_role(security_client):
     client, _, data = security_client
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## Phase 10 — Export JSON et mock E-consta
+
+- Export JSON versionné avec double garde-fou de validation humaine.
+- Client E-consta avec timeout configurable, corrélation et erreurs explicites.
+- Envoi idempotent et refus des collisions de clé avec un contenu différent.
+- Audit des tentatives, réussites, répétitions et échecs sans données métier complètes.
+- Tests d’intégration du parcours validation, export, envoi et répétition.
+
 ## Ajustement produit — export JSON
 
 - Remplacement du document PDF par un export JSON UTF-8 versionné.

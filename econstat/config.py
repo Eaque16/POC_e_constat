@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     llm_seed: int = 42
     econsta_base_url: str = "http://127.0.0.1:8001"
     econsta_api_key: str = "demo-local-key"
+    econsta_timeout_seconds: float = 15.0
 
     @property
     def access_token_minutes(self) -> int:
