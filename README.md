@@ -3,7 +3,7 @@
 POC local Windows d’assistance à la déclaration de sinistre automobile. La cible est un PC CPU,
 sans dépendance obligatoire à CUDA, Docker, WSL2, Kafka, Redis ou Celery.
 
-> Principe non négociable : l’IA propose. L’agent vérifie, corrige et valide. Aucun PDF officiel
+> Principe non négociable : l’IA propose. L’agent vérifie, corrige et valide. Aucun export JSON
 > ni envoi E-consta n’est autorisé avant une validation humaine explicite.
 
 ## État de la reprise
@@ -76,7 +76,7 @@ robuste. `.env` est ignoré par Git et les téléchargements de modèles sont d�
 Copy-Item .env.example .env
 ```
 
-Ne jamais versionner de secret, token, audio client, base locale, modèle lourd ou PDF client.
+Ne jamais versionner de secret, token, audio client, base locale, modèle lourd ou export client.
 
 ## Base de données locale
 
@@ -216,7 +216,7 @@ JSON avec le prompt compact : le complément LLM réel reste donc `PARTIAL`.
 6. Diarisation pyannote ou fallback explicite `INCONNU`.
 7. Extraction déterministe, puis complément LLM facultatif avec preuve littérale.
 8. Revue, correction et validation humaine explicite.
-9. PDF et envoi vers le mock E-consta.
+9. Export JSON et envoi vers le mock E-consta.
 10. Audit et dashboard responsable.
 
 ## Documentation de pilotage

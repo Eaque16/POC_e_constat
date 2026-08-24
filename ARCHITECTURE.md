@@ -46,7 +46,7 @@ Gradio UI ---- polling HTTP ----> FastAPI
 5. Il applique règles et lexique, puis sollicite facultativement Ollama. Une valeur LLM sans preuve
    littérale vérifiable est rejetée.
 6. Le job passe à `ready_for_review`. L’agent corrige et valide.
-7. L’API et `EConstaClient` interdisent indépendamment PDF/envoi avant validation.
+7. L’API, le service d’export JSON et `EConstaClient` imposent la validation humaine.
 
 ## Décisions structurantes
 
@@ -134,7 +134,7 @@ le schéma n’est pas reconnu.
 - Limites de taille, MIME, conteneur, durée et hash avant traitement.
 - Écriture temporaire puis renommage atomique ; nettoyage sur rejet ou échec de transaction SQL.
 - Audit minimal des acceptations et rejets, sans nom de fichier fourni par le client.
-- Aucun secret, audio réel, modèle lourd, base locale ou PDF client dans Git.
+- Aucun secret, audio réel, modèle lourd, base locale ou export client dans Git.
 - Données de test synthétiques ou anonymisées.
 
 ## Trajectoire de montée en charge

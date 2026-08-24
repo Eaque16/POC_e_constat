@@ -69,11 +69,6 @@ class Settings(BaseSettings):
         return self.jwt_expiration_minutes
 
     @property
-    def pdf_dir(self) -> Path:
-        """Compatibilité avec le générateur PDF historique."""
-        return self.generated_dir
-
-    @property
     def random_seed(self) -> int:
         """Compatibilité avec l'extracteur historique."""
         return self.llm_seed

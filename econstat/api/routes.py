@@ -35,7 +35,7 @@ from econstat.services.audio_validation import AudioValidationError, validate_an
 from econstat.services.econsta import EConstaClient
 from econstat.services.extraction import HybridExtractor
 from econstat.services.jobs import create_job
-from econstat.services.pdf import generate_claim_pdf
+from econstat.services.json_export import generate_claim_json
 
 router = APIRouter()
 
@@ -375,12 +375,31 @@ async def send_claim(
     return result
 
 
-@router.get("/claims/{claim_id}/pdf")
-def claim_pdf(claim_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+@router.get("/claims/{claim_id}/export-json")
+def claim_json_export(
+    claim_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
     claim = get_owned_claim_or_404(claim_id, user, db)
     if claim.status not in {ClaimStatus.validated, ClaimStatus.sent}:
-        raise HTTPException(409, "Le PDF exige une validation humaine")
-    return {"path": str(generate_claim_pdf(claim.id, claim.data, get_settings().pdf_dir))}
+        raise HTTPException(409, "L’export JSON exige une validation humaine")
+    path = generate_claim_json(
+        claim.id,
+        claim.data,
+        get_settings().generated_dir,
+        validated_by=claim.validated_by,
+        validated_at=claim.validated_at,
+    )
+    db.add(
+        AuditLog(
+            user_id=user.id,
+            action="json_export_generated",
+            entity_type="claim",
+            entity_id=claim.id,
+            details_json={},
+        )
+    )
+    db.commit()
+    return {"path": str(path)}
 
 
 @router.get("/dashboard")

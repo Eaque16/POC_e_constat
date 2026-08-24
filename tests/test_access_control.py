@@ -136,7 +136,7 @@ def test_agent_lists_only_owned_claims(security_client):
         ("put", "/api/claims/{claim_id}", {"json": {"data": {"plaque": "XX 999 XX"}}}),
         ("post", "/api/claims/{claim_id}/validate", {}),
         ("post", "/api/claims/{claim_id}/send", {}),
-        ("get", "/api/claims/{claim_id}/pdf", {}),
+        ("get", "/api/claims/{claim_id}/export-json", {}),
     ],
 )
 def test_agent_cannot_act_on_another_agents_claim(
@@ -219,6 +219,23 @@ def test_claim_review_preserves_ai_proposal_and_locks_after_validation(security_
     assert review.json()["current_data"]["plaque"] == "AC 1234 CI"
     assert validation.status_code == 200
     assert locked.status_code == 409
+
+
+def test_json_export_requires_validation_at_api_boundary(security_client):
+    client, _, data = security_client
+    headers = authorization(data.agent_a)
+
+    rejected = client.get(
+        f"/api/claims/{data.claim_a.id}/export-json", headers=headers
+    )
+    client.post(f"/api/claims/{data.claim_a.id}/validate", headers=headers)
+    exported = client.get(
+        f"/api/claims/{data.claim_a.id}/export-json", headers=headers
+    )
+
+    assert rejected.status_code == 409
+    assert exported.status_code == 200
+    assert exported.json()["path"].endswith(".json")
 
 
 def test_database_role_wins_over_forged_token_role(security_client):

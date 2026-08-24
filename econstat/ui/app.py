@@ -204,12 +204,12 @@ def validate_claim(session: dict, claim_id: str):
     return "Déclaration validée explicitement par un humain."
 
 
-def generate_pdf(session: dict, claim_id: str):
+def generate_json(session: dict, claim_id: str):
     try:
-        result = api.pdf(require_token(session), claim_id)
+        result = api.export_json(require_token(session), claim_id)
     except APIError as exc:
-        raise gr.Error(f"PDF impossible : {exc}") from exc
-    return result["path"], "PDF généré après contrôle de la validation humaine."
+        raise gr.Error(f"Export JSON impossible : {exc}") from exc
+    return result["path"], "JSON généré après contrôle de la validation humaine."
 
 
 def send_claim(session: dict, claim_id: str):
@@ -321,15 +321,15 @@ def build_app() -> gr.Blocks:
                 save_corrections, [session, claim_selector, editable], action_status
             )
             validate_btn.click(validate_claim, [session, claim_selector], action_status)
-        with gr.Tab("PDF et envoi mock"):
+        with gr.Tab("Export JSON et envoi mock"):
             claim_action_id = gr.Textbox(label="Identifiant de la déclaration validée")
             with gr.Row():
-                pdf_btn = gr.Button("Générer le PDF")
+                json_btn = gr.Button("Générer le JSON")
                 send_btn = gr.Button("Envoyer au mock E-consta", variant="primary")
-            pdf_file = gr.File(label="PDF")
+            json_file = gr.File(label="Export JSON")
             external_status = gr.Markdown()
-            pdf_btn.click(
-                generate_pdf, [session, claim_action_id], [pdf_file, external_status]
+            json_btn.click(
+                generate_json, [session, claim_action_id], [json_file, external_status]
             )
             send_btn.click(send_claim, [session, claim_action_id], external_status)
         with gr.Tab("Historique"):

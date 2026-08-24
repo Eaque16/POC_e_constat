@@ -80,8 +80,8 @@ class EConstatAPI:
     def validate(self, token: str, claim_id: str) -> dict:
         return self._request("POST", f"/claims/{claim_id}/validate", token)
 
-    def pdf(self, token: str, claim_id: str) -> dict:
-        return self._request("GET", f"/claims/{claim_id}/pdf", token)
+    def export_json(self, token: str, claim_id: str) -> dict:
+        return self._request("GET", f"/claims/{claim_id}/export-json", token)
 
     def send(self, token: str, claim_id: str) -> dict:
         return self._request("POST", f"/claims/{claim_id}/send", token)
