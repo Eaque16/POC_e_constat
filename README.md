@@ -140,6 +140,17 @@ indicateur séparé. Les taux de correction portent sur les déclarations exista
 lorsque la base est vide. Les types d’accident et codes d’erreur sont présentés sous forme de
 distributions agrégées, sans contenu individuel de dossier.
 
+## Tests end-to-end
+
+`tests/test_end_to_end.py` traverse l’API, SQLite, la file SQL, le processus logique du worker,
+les checkpoints, l’extraction déterministe, la revue, la validation, l’export JSON, le client mock,
+l’audit et le dashboard. Le média est un WAV synthétique. La frontière Faster-Whisper est remplacée
+par un transcripteur synthétique déterministe afin qu’aucun modèle ne soit téléchargé pendant les
+tests ; toutes les autres couches du parcours restent actives.
+
+Un scénario distinct provoque une panne de transcription, vérifie la persistance de l’échec, appelle
+la route de retry et confirme la reprise au checkpoint `transcribing` jusqu’à `ready_for_review`.
+
 ## Ingestion audio sécurisée
 
 `POST /api/calls` lit le fichier par blocs avec une limite stricte, vérifie le MIME déclaré puis

@@ -1,5 +1,14 @@
 # Changelog
 
+## Phase 12 — Tests end-to-end
+
+- Parcours complet authentifié de l’upload synthétique à l’envoi mock et au dashboard.
+- Exécution par `worker.run_once` avec vraie file SQL et checkpoints persistants.
+- Vérification des preuves, corrections, rôles, validation et contenu de l’export JSON.
+- Vérification des audits métier et techniques du parcours.
+- Scénario panne ASR, état failed, retry et reprise depuis le checkpoint transcription.
+- Aucun réseau ni téléchargement de modèle pendant les tests.
+
 ## Phase 11 — Dashboard responsable
 
 - Contrat typé couvrant appels, dossiers, états, erreurs, latence et corrections.
