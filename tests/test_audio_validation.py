@@ -13,7 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from econstat.config import get_settings
 from econstat.database import Base, get_db
 from econstat.main import app
-from econstat.models import AuditLog, Call, Role, User
+from econstat.models import AuditLog, Call, ProcessingJob, ProcessingJobStatus, Role, User
 from econstat.services.auth import create_token
 
 
@@ -88,6 +88,11 @@ def test_valid_audio_is_stored_under_uuid_with_hash_and_audit(audio_client):
         assert "nom-client" not in str(path)
         assert path.read_bytes() == content
         assert call.audio_sha256 == payload["sha256"]
+        job = db.get(ProcessingJob, payload["job_id"])
+        assert job is not None
+        assert job.call_id == call.id
+        assert job.status == ProcessingJobStatus.queued
+        assert payload["job_status"] == "queued"
         audit = db.scalar(
             select(AuditLog).where(
                 AuditLog.entity_id == call.id,

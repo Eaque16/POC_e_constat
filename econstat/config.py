@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     processing_profile: str = "fast"
     job_stale_minutes: int = 30
     job_poll_seconds: float = 2.0
+    job_max_retries: int = 3
     whisper_fast_model: str = "models/whisper-tiny"
     whisper_quality_model: str = "models/whisper-ct2"
     whisper_device: str = "cpu"

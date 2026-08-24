@@ -9,8 +9,8 @@ sans dépendance obligatoire à CUDA, Docker, WSL2, Kafka, Redis ou Celery.
 ## État de la reprise
 
 La branche `rebuild/cpu-first` reconstruit progressivement l’ancien POC sans le supprimer avant
-remplacement vérifié. Les phases 0 à 4 couvrent le cadrage, la reproductibilité Windows, le
-diagnostic, le modèle de données, la sécurité API et l’ingestion audio. Les fonctions historiques ne sont
+remplacement vérifié. Les phases 0 à 5 couvrent le cadrage, la reproductibilité Windows, le
+diagnostic, le modèle de données, la sécurité API, l’ingestion audio et la file SQL. Les fonctions historiques ne sont
 considérées livrées dans la nouvelle architecture qu’après leur phase dédiée.
 
 - cœur Python local et 11 tests historiques opérationnels ;
@@ -22,6 +22,7 @@ considérées livrées dans la nouvelle architecture qu’après leur phase déd
 - aucune performance et aucun résultat IA ne sont revendiqués sans mesure.
 - le schéma Alembic `0002` conserve les données historiques et ajoute `ProcessingJob`.
 - l’upload contrôle taille, extension, MIME, conteneur, piste et durée avant de créer l’appel.
+- l’upload crée atomiquement un job SQL ; le worker indépendant persiste progression et checkpoints.
 
 ## Architecture cible
 
@@ -125,8 +126,22 @@ sur la seule foi de son extension.
 ```
 
 `run-local.ps1` initialise SQLite et lance le mock E-consta, l’API et l’interface. Le worker est
-séparé pour que l’interface reste disponible pendant les calculs CPU. Tant que la phase Jobs n’est
-pas livrée, `run-worker.ps1` signale clairement ce prérequis au lieu de simuler un fonctionnement.
+séparé pour que l’interface reste disponible pendant les calculs CPU. Il traite un job à la fois.
+Sans modèle Whisper local, le job passe en échec explicite et aucun téléchargement silencieux n’a lieu.
+
+## File de traitement
+
+L’upload retourne `job_id` et `job_status=queued`. Le suivi utilise :
+
+```text
+GET  /api/jobs
+GET  /api/jobs/{job_id}
+POST /api/jobs/{job_id}/retry
+```
+
+L’accès respecte la propriété du dossier. Une réservation SQL conditionnelle empêche deux workers
+de prendre le même job. Un job actif dont `updated_at` dépasse `JOB_STALE_MINUTES` revient en file
+avec son `current_step`. Le nombre de relances manuelles est limité par `JOB_MAX_RETRIES`.
 
 ## Parcours produit cible
 
@@ -151,7 +166,8 @@ pas livrée, `run-worker.ps1` signale clairement ce prérequis au lieu de simule
 
 ## Limites actuelles
 
-Le dépôt est un POC, pas un produit de production. Il ne dispose pas encore d’un corpus représentatif
+Le dépôt est un POC, pas un produit de production. La mécanique du worker est testée avec des
+composants IA synthétiques ; la transcription CPU réelle reste à qualifier en phase 6. Il ne dispose pas encore d’un corpus représentatif
 annoté, d’une vraie API E-consta, d’une téléphonie réelle, d’une revue RGPD, d’un audit de sécurité,
 de tests de charge ou de mesures de précision sur les accents ivoiriens. Le succès des tests unitaires
 ne prouve pas une aptitude à la production.

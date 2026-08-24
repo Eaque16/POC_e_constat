@@ -1,7 +1,6 @@
 from datetime import UTC, datetime
-from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -14,16 +13,24 @@ from econstat.api.deps import (
 )
 from econstat.config import get_settings
 from econstat.database import get_db
-from econstat.models import AuditLog, Call, Claim, ClaimStatus, User
+from econstat.models import (
+    AuditLog,
+    Call,
+    Claim,
+    ClaimStatus,
+    ProcessingJob,
+    ProcessingJobStatus,
+    ProcessingProfile,
+    User,
+)
 from econstat.schemas.call import CallUploadResponse
 from econstat.schemas.claim import ClaimData
+from econstat.schemas.job import JobResponse
 from econstat.services.audio_validation import AudioValidationError, validate_and_store_audio
-from econstat.services.diarization import Diarizer, align_and_label
 from econstat.services.econsta import EConstaClient
 from econstat.services.extraction import HybridExtractor
+from econstat.services.jobs import create_job
 from econstat.services.pdf import generate_claim_pdf
-from econstat.services.pipeline import process_audio
-from econstat.services.transcription import Transcriber
 
 router = APIRouter()
 
@@ -38,7 +45,10 @@ class TranscriptRequest(BaseModel):
 
 @router.post("/calls", status_code=201, response_model=CallUploadResponse)
 async def create_call(
-    audio: UploadFile = File(...), user: User = Depends(current_user), db: Session = Depends(get_db)
+    audio: UploadFile = File(...),
+    profile: ProcessingProfile = Form(ProcessingProfile.fast),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
 ) -> CallUploadResponse:
     settings = get_settings()
     try:
@@ -68,6 +78,8 @@ async def create_call(
         segments_json=[],
     )
     db.add(call)
+    job = create_job(call.id, profile)
+    db.add(job)
     db.add(
         AuditLog(
             user_id=user.id,
@@ -83,6 +95,15 @@ async def create_call(
             },
         )
     )
+    db.add(
+        AuditLog(
+            user_id=user.id,
+            action="job_queued",
+            entity_type="processing_job",
+            entity_id=job.id,
+            details_json={"call_id": call.id, "profile": profile.value},
+        )
+    )
     try:
         db.commit()
     except Exception:
@@ -92,6 +113,8 @@ async def create_call(
     return CallUploadResponse(
         id=call.id,
         status="uploaded",
+        job_id=job.id,
+        job_status=ProcessingJobStatus.queued.value,
         duration_seconds=stored.duration_seconds,
         sha256=stored.sha256,
     )
@@ -101,59 +124,18 @@ async def create_call(
 async def extract_call(
     call_id: str, transcript: str, user: User = Depends(current_user), db: Session = Depends(get_db)
 ):
-    call = get_owned_call_or_404(call_id, user, db)
-    result = await HybridExtractor(get_settings()).extract(transcript)
-    call.transcript = transcript
-    call.completed_at = datetime.now(UTC)
-    claim = Claim(
-        call_id=call.id,
-        data=result.data.model_dump(mode="json"),
-        field_confidences=result.field_confidences,
-        missing_fields=result.missing_fields,
-        suggested_questions=result.suggested_questions,
-        confidence_score=result.overall_confidence,
-        model_trace=result.trace,
-        status=ClaimStatus.pending_validation,
+    get_owned_call_or_404(call_id, user, db)
+    raise HTTPException(
+        409, "Extraction directe désactivée : utilisez le job asynchrone de l’appel."
     )
-    db.add(claim)
-    db.add(
-        AuditLog(
-            user_id=user.id,
-            action="ai_extraction",
-            entity_type="claim",
-            entity_id=claim.id,
-            details=result.trace,
-        )
-    )
-    db.commit()
-    return {"claim_id": claim.id, "call_id": call.id, "extraction": result}
 
 
 @router.post("/calls/{call_id}/transcribe")
 def transcribe_call(
     call_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)
 ):
-    """Transcrit et persiste le transcript sans lancer l'extraction structurée."""
-    call = get_owned_call_or_404(call_id, user, db)
-    segments = Transcriber(get_settings()).transcribe(Path(call.audio_path))
-    try:
-        turns = Diarizer(get_settings()).diarize(Path(call.audio_path))
-    except RuntimeError:
-        turns = []
-    labelled = align_and_label(segments, turns)
-    call.transcript = "\n".join(f"{item.speaker}: {item.text}" for item in labelled)
-    call.segments = [item.model_dump() for item in labelled]
-    db.add(
-        AuditLog(
-            user_id=user.id,
-            action="transcription",
-            entity_type="call",
-            entity_id=call.id,
-            details={"segments": len(labelled)},
-        )
-    )
-    db.commit()
-    return {"call_id": call.id, "transcript": call.transcript, "segments": labelled}
+    get_owned_call_or_404(call_id, user, db)
+    raise HTTPException(409, "Transcription directe désactivée : utilisez le worker.")
 
 
 @router.post("/calls/demo", status_code=201)
@@ -195,38 +177,20 @@ async def create_demo_call(
     return {"claim_id": claim.id, "call_id": call.id, "extraction": result}
 
 
-@router.post("/calls/{call_id}/process")
-async def process_call_audio(
+@router.post("/calls/{call_id}/process", response_model=JobResponse)
+def process_call_audio(
     call_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)
 ):
-    """Pipeline historique ; la phase Jobs le déplacera hors de la requête HTTP."""
+    """Compatibilité : retourne le job existant sans lancer de calcul dans la requête."""
     call = get_owned_call_or_404(call_id, user, db)
-    result, segments = await process_audio(Path(call.audio_path), get_settings())
-    call.transcript = "\n".join(f"{s.speaker}: {s.text}" for s in segments)
-    call.segments = [s.model_dump() for s in segments]
-    call.completed_at = datetime.now(UTC)
-    claim = Claim(
-        call_id=call.id,
-        data=result.data.model_dump(mode="json"),
-        field_confidences=result.field_confidences,
-        missing_fields=result.missing_fields,
-        suggested_questions=result.suggested_questions,
-        confidence_score=result.overall_confidence,
-        model_trace=result.trace,
-        status=ClaimStatus.pending_validation,
+    job = db.scalar(
+        select(ProcessingJob)
+        .where(ProcessingJob.call_id == call.id)
+        .order_by(ProcessingJob.updated_at.desc())
     )
-    db.add(claim)
-    db.add(
-        AuditLog(
-            user_id=user.id,
-            action="ai_pipeline",
-            entity_type="claim",
-            entity_id=claim.id,
-            details=result.trace,
-        )
-    )
-    db.commit()
-    return {"claim_id": claim.id, "segments": segments, "extraction": result}
+    if job is None:
+        raise HTTPException(409, "Aucun job associé à cet appel.")
+    return job
 
 
 @router.get("/claims")

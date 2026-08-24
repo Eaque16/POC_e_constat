@@ -99,3 +99,18 @@
 **Conséquences** : FFmpeg/ffprobe est un prérequis explicite de l’ingestion et son absence renvoie 503.
 
 **Réversibilité** : l’inspecteur peut être remplacé derrière `audio_validation` sans changer le contrat API.
+
+## ADR-011 — Checkpoint porté par la prochaine étape à exécuter
+
+**Contexte** : un arrêt peut survenir entre transcription, diarisation et extraction.
+
+**Options** : recommencer tout le pipeline ; colonnes par étape ; `current_step` transactionnel.
+
+**Choix** : résultat d’une étape et passage à la suivante sont commités ensemble ; `current_step`
+désigne toujours la prochaine étape à exécuter.
+
+**Pourquoi** : reprise simple et vérifiable avec le schéma existant, sans infrastructure supplémentaire.
+
+**Conséquences** : chaque étape doit rester idempotente et utiliser la même session transactionnelle.
+
+**Réversibilité** : des checkpoints plus détaillés pourront être ajoutés si les mesures le justifient.

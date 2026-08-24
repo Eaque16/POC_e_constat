@@ -59,6 +59,31 @@ class StoredAudio:
     format_name: str
 
 
+def validate_stored_audio(path: Path, expected_sha256: str, settings: Settings) -> AudioProbe:
+    """Revérifie un média déjà stocké avant le traitement lourd du worker."""
+    suffix = path.suffix.lower()
+    if suffix not in settings.allowed_audio_suffixes or suffix not in FORMAT_NAMES_BY_SUFFIX:
+        raise AudioValidationError(415, "audio_extension_not_allowed", "Extension audio invalide.")
+    if not path.is_file():
+        raise AudioValidationError(422, "audio_file_missing", "Fichier audio stocké introuvable.")
+    max_bytes = settings.max_audio_mb * 1024 * 1024
+    size_bytes = 0
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(CHUNK_SIZE):
+            size_bytes += len(chunk)
+            if size_bytes > max_bytes:
+                raise AudioValidationError(
+                    413, "audio_size_exceeded", "Fichier audio trop volumineux."
+                )
+            digest.update(chunk)
+    if digest.hexdigest() != expected_sha256:
+        raise AudioValidationError(
+            422, "audio_hash_mismatch", "Le fichier audio a changé depuis son ingestion."
+        )
+    return probe_audio(path, suffix, settings)
+
+
 def validate_declared_type(upload: UploadFile, suffix: str) -> str:
     mime_type = (upload.content_type or GENERIC_BINARY_MIME).split(";", 1)[0].strip().lower()
     allowed = MIME_TYPES_BY_SUFFIX.get(suffix, frozenset()) | {GENERIC_BINARY_MIME}

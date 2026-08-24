@@ -73,11 +73,17 @@ des frontières testables avec moins de déploiements et de défaillances résea
 ## Cohérence et reprise
 
 - Un seul job traité simultanément par défaut.
-- Verrou et timestamps persistés.
+- Réservation par `UPDATE ... WHERE status=queued` : un seul worker gagne le job.
+- Verrou et timestamps persistés ; polling simple réglé par `JOB_POLL_SECONDS`.
 - Jobs actifs trop anciens détectés via `JOB_STALE_MINUTES`.
 - Résultats intermédiaires sauvegardés après chaque étape.
-- Une reprise vérifie le checkpoint avant de recalculer.
+- Résultat d’étape et transition suivante validés dans le même commit SQL.
+- Une reprise conserve `current_step` et ne rejoue pas les étapes déjà validées.
 - Transitions et erreurs auditées sans secrets ni contenu audio dans les logs.
+
+Le worker se lance avec `python -m econstat.worker`; `--once` traite au plus un job pour le
+diagnostic. Les uploads créent `Call` et `ProcessingJob` dans la même transaction. Les anciens
+endpoints de calcul direct ne lancent plus de charge IA depuis une requête HTTP.
 
 ## Modèle persistant
 

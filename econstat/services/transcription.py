@@ -1,8 +1,6 @@
 import math
 from pathlib import Path
 
-import torch
-
 from econstat.config import Settings
 from econstat.schemas.claim import TranscriptSegment
 
@@ -12,21 +10,30 @@ def normalise_logprob(avg_logprob: float) -> float:
 
 
 class Transcriber:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, profile: str | None = None):
         self.settings = settings
+        selected_profile = profile or settings.processing_profile
+        self.model_source = Path(
+            settings.whisper_quality_model
+            if selected_profile == "quality"
+            else settings.whisper_fast_model
+        )
         self._model = None
 
     def _load(self):
         if self._model is None:
+            if not self.model_source.exists() and not self.settings.allow_model_downloads:
+                raise RuntimeError(
+                    f"Modèle Whisper local absent : {self.model_source}. "
+                    "Utilisez scripts/download_models.py explicitement."
+                )
             from faster_whisper import WhisperModel
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            compute_type = "float16" if device == "cuda" else "int8"
             self._model = WhisperModel(
-                "models/whisper-ct2",
-                device=device,
-                compute_type=compute_type,
-                download_root="models/whisper",
+                str(self.model_source),
+                device=self.settings.whisper_device,
+                compute_type=self.settings.whisper_compute_type,
+                download_root=str(self.settings.model_dir / "whisper"),
             )
         return self._model
 

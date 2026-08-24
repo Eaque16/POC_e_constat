@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from econstat.config import get_settings
 from econstat.database import get_db
-from econstat.models import Call, Claim, Role, User
+from econstat.models import Call, Claim, ProcessingJob, Role, User
 from econstat.services.auth import decode_token
 
 security = HTTPBearer(auto_error=False)
@@ -70,3 +70,14 @@ def get_owned_claim_or_404(claim_id: str, user: User, db: Session) -> Claim:
     if not claim or not user_can_access_owner(user, claim.call.owner_id):
         raise HTTPException(404, "Déclaration introuvable")
     return claim
+
+
+def get_owned_job_or_404(job_id: str, user: User, db: Session) -> ProcessingJob:
+    job = db.scalar(
+        select(ProcessingJob)
+        .join(Call, ProcessingJob.call_id == Call.id)
+        .where(ProcessingJob.id == job_id)
+    )
+    if not job or not user_can_access_owner(user, job.call.owner_id):
+        raise HTTPException(404, "Traitement introuvable")
+    return job

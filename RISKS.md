@@ -12,7 +12,7 @@
 | R08 | API E-consta réelle absente | Élevée | Moyen | client encapsulé, mock, contrat documenté | Manager | Ouvert |
 | R09 | SQLite limité en concurrence | Faible au POC | Moyen | worker unique, transactions courtes, PostgreSQL futur | Architecte | Accepté POC |
 | R10 | Audio invalide ou malveillant | Moyenne | Élevé | taille, MIME, ffprobe, durée, UUID, SHA-256 | Tech Lead | Maîtrisé phase 4 |
-| R11 | Job bloqué après incident | Moyenne | Élevé | checkpoints, timestamps, stale, reprise idempotente | Tech Lead | Phase 5 |
+| R11 | Job bloqué après incident | Moyenne | Élevé | checkpoints, timestamps, stale, reprise idempotente | Tech Lead | Maîtrisé phase 5 |
 | R12 | Qualité insuffisante sur accents/bruit | Élevée | Élevé | corpus consenti, baseline, métriques par sous-groupe | Manager/IA | Non mesuré |
 | R13 | Confusion Python système/projet | Moyenne | Moyen | commandes `.venv`, diagnostic, scripts stricts | Tech Lead | Maîtrisé phase 1 |
 | R14 | Secret de développement hors local | Moyenne | Critique | variable obligatoire, `.env` ignoré, diagnostic sans valeur | Tech Lead | Ouvert |

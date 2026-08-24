@@ -19,6 +19,10 @@
   stockage UUID, SHA-256, nettoyage transactionnel et audit minimal des acceptations/rejets.
 - Validation phase 4 : fichiers WAV valides, faux conteneurs, incohérence extension/conteneur,
   fichier vide, limites de taille/durée et absence de `ffprobe`, 39 tests, Ruff et `pip check`.
+- Phase 5 : création atomique `Call` + `ProcessingJob`, réservation SQL conditionnelle, progression,
+  checkpoints, échec, retry borné, reprise stale, API de suivi propriétaire et worker indépendant.
+- Validation phase 5 : réservation exclusive, transitions monotones, reprise au checkpoint, erreur
+  persistée, fallback diarisation et accès croisé ; 45 tests, pipeline IA simulé sans téléchargement.
 
 > Les entrées correspondent aux phases livrées sur la branche `rebuild/cpu-first` avec un commit
 > logique par phase.
