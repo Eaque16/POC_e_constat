@@ -47,6 +47,7 @@ from econstat.services.jobs import create_job
 from econstat.services.json_export import generate_claim_json
 from econstat.services.realtime_transcription import get_realtime_transcriber
 from econstat.services.transcription import TranscriptionError
+from econstat.services.conversation import WELCOME_MESSAGE, new_conversation, progress, respond
 
 router = APIRouter()
 
@@ -93,6 +94,43 @@ class ConversationClaimRequest(BaseModel):
     transcript: list[str]
     claim_id: str | None = None
     field_records: dict[str, dict] = Field(default_factory=dict)
+
+
+class ConversationTurnRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+    state: dict
+    asr_confidence: float = Field(default=0.75, ge=0, le=1)
+
+
+@router.post("/conversations/start")
+def start_guided_conversation(_: User = Depends(current_user)):
+    """Démarre le moteur conversationnel réel utilisé par les interfaces clientes."""
+    state = new_conversation()
+    return {
+        "reply": WELCOME_MESSAGE,
+        "state": state,
+        "progress": progress(state["data"]),
+        "complete": False,
+    }
+
+
+@router.post("/conversations/respond")
+def respond_to_guided_conversation(
+    body: ConversationTurnRequest,
+    _: User = Depends(current_user),
+):
+    """Parse une réponse client dans le slot attendu et retourne la prochaine question."""
+    reply, state = respond(
+        body.message,
+        body.state,
+        asr_confidence=body.asr_confidence,
+    )
+    return {
+        "reply": reply,
+        "state": state,
+        "progress": progress(state.get("data", {})),
+        "complete": state.get("current_field") is None,
+    }
 
 
 def claim_review_response(claim: Claim) -> ClaimReviewResponse:

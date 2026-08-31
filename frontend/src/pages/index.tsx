@@ -1,36 +1,18 @@
 ﻿import { useState, useEffect, useCallback } from "react";
 import { PagePlaceholder } from "@/components/layout/PagePlaceholder";
-import { useCallState } from "@/hooks/useCallState";
-import { useMicrophoneStream } from "@/hooks/useMicrophoneStream";
-import { useCallAnalysis } from "@/hooks/useCallAnalysis";
-import { useCallRecording } from "@/hooks/useCallRecording";
-import { mockCaller, mockClaimFolder } from "@/data/mockCall";
 import { mockAgents } from "@/data/mockAgents";
 import { mockCallStats } from "@/data/mockDashboard";
 import { mockDossiers } from "@/data/mockDossiers";
-import { IncomingCallModal } from "@/components/call/IncomingCallModal";
-import { CallControls } from "@/components/call/CallControls";
-import { CallerPanel } from "@/components/call/CallerPanel";
-import { LiveTranscript } from "@/components/call/LiveTranscript";
-import { LiveCallStatus } from "@/components/call/LiveCallStatus";
-import { ClaimFolderMock } from "@/components/call/ClaimFolderMock";
-import { IVRSimulation } from "@/components/call/IVRSimulation";
-import { AIAssistant } from "@/components/copilot/AIAssistant";
-import { CallClassification } from "@/components/copilot/CallClassification";
-import { ExtractedInformation } from "@/components/copilot/ExtractedInformation";
-import { MissingInformation } from "@/components/copilot/MissingInformation";
 import { KpiCard } from "@/components/dashboard/KpiCard";
 import { DossiersByStatusChart } from "@/components/dashboard/DossiersByStatusChart";
 import { DossiersByTypeChart } from "@/components/dashboard/DossiersByTypeChart";
 import { AgentList } from "@/components/agents/AgentList";
 import { SinistreList } from "@/components/dossiers/SinistreList";
 import { SinistreDetail } from "@/components/dossiers/SinistreDetail";
-import { SinistreDataView } from "@/components/dossiers/SinistreDataView";
 import { listSinistres } from "@/services/sinistres";
-import { uploadAudioAndAnalyze } from "@/services/sinistres";
-import { ApiError } from "@/services/api";
-import type { SinistreResponse, AnalysisResponse } from "@/types/api";
+import type { SinistreResponse } from "@/types/api";
 import { AssistantIAPanel } from "@/components/copilot/AssistantIAPanel";
+import { RealCallWorkspace } from "@/components/call/RealCallWorkspace";
 
 export function DashboardPage() {
   const validated = mockDossiers.filter((d) => d.statut === "Valide").length;
@@ -62,7 +44,8 @@ export function DashboardPage() {
 }
 
 export function AppelsPage() {
-  const {
+  return <RealCallWorkspace />;
+  /* const {
     state,
     simulateIncomingCall,
     answer,
@@ -236,7 +219,7 @@ export function AppelsPage() {
         </>
       )}
     </div>
-  );
+  ); */
 }
 
 export function AssistantIAPage() {
