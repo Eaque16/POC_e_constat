@@ -82,11 +82,7 @@ def word_error_rate(reference: str, hypothesis: str) -> dict[str, float | int | 
 
 def diarization_error_rate(reference: list[dict], hypothesis: list[dict]) -> dict:
     boundaries = sorted(
-        {
-            float(turn[edge])
-            for turn in [*reference, *hypothesis]
-            for edge in ("start", "end")
-        }
+        {float(turn[edge]) for turn in [*reference, *hypothesis] for edge in ("start", "end")}
     )
 
     def speaker_at(turns: list[dict], moment: float) -> str | None:
@@ -152,15 +148,9 @@ def score_extraction(cases: list[dict], predictions: list[dict]) -> dict:
     total = {"tp": 0, "fp": 0, "fn": 0}
     for field, values in sorted(counts.items()):
         precision = (
-            values["tp"] / (values["tp"] + values["fp"])
-            if values["tp"] + values["fp"]
-            else 0
+            values["tp"] / (values["tp"] + values["fp"]) if values["tp"] + values["fp"] else 0
         )
-        recall = (
-            values["tp"] / (values["tp"] + values["fn"])
-            if values["tp"] + values["fn"]
-            else 0
-        )
+        recall = values["tp"] / (values["tp"] + values["fn"]) if values["tp"] + values["fn"] else 0
         f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0
         per_field[field] = {
             **values,
@@ -206,8 +196,14 @@ def git_is_dirty() -> bool | None:
 def ffprobe_duration(path: Path) -> float:
     result = subprocess.run(
         [
-            "ffprobe", "-v", "error", "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1", str(path),
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(path),
         ],
         capture_output=True,
         text=True,
@@ -242,9 +238,7 @@ def subgroup_metrics(cases: list[dict], case_results: list[dict]) -> dict:
     output = {}
     for group, results in sorted(grouped.items()):
         wers = [
-            item["wer"]["wer"]
-            for item in results
-            if (item.get("wer") or {}).get("wer") is not None
+            item["wer"]["wer"] for item in results if (item.get("wer") or {}).get("wer") is not None
         ]
         output[group] = {
             "cases": len(results),
@@ -253,6 +247,54 @@ def subgroup_metrics(cases: list[dict], case_results: list[dict]) -> dict:
                 sum(item["extraction_seconds"] for item in results) / len(results), 6
             ),
         }
+    return output
+
+
+def slot_metrics(cases: list[dict], predictions: list[dict]) -> dict:
+    """Métriques spécialisées ; null reste explicite lorsque le manifeste n'est pas annoté."""
+    field_names = {
+        "lastname": "exact_match_lastname",
+        "firstname": "exact_match_firstname",
+        "date_accident": "date_accuracy",
+        "heure_accident": "time_accuracy",
+        "accident_datetime": "datetime_accuracy",
+        "telephone_assure": "phone_accuracy",
+        "plaque": "plate_accuracy",
+    }
+    output = {}
+    for field, metric_name in field_names.items():
+        comparisons = []
+        for case, prediction in zip(cases, predictions, strict=True):
+            truth = case.get("expected_data", {})
+            if field in truth:
+                comparisons.append(
+                    normalise_text(truth[field]) == normalise_text(prediction.get(field))
+                )
+        output[metric_name] = (
+            round(sum(comparisons) / len(comparisons), 6) if comparisons else None
+        )
+    location_top1 = [case.get("location_top1_correct") for case in cases]
+    location_top3 = [case.get("location_top3_correct") for case in cases]
+    location_top1 = [value for value in location_top1 if value is not None]
+    location_top3 = [value for value in location_top3 if value is not None]
+    confirmations = [case.get("confirmed") for case in cases if "confirmed" in case]
+    output.update(
+        {
+            "wer_proper_names": None,
+            "location_top1_accuracy": (
+                round(sum(location_top1) / len(location_top1), 6) if location_top1 else None
+            ),
+            "location_top3_accuracy": (
+                round(sum(location_top3) / len(location_top3), 6) if location_top3 else None
+            ),
+            "confirmation_rate": (
+                round(sum(bool(value) for value in confirmations) / len(confirmations), 6)
+                if confirmations
+                else None
+            ),
+            "status": "mesure_partielle_selon_annotations",
+        }
+    )
     return output
 
 
@@ -307,12 +349,8 @@ def benchmark(manifest_path: Path, profile: str, run_asr_enabled: bool) -> dict:
     wer_errors = sum(item["errors"] for item in wer_results)
     wer_words = sum(item["reference_words"] for item in wer_results)
     audio_seconds = sum(item.get("audio_seconds", 0) for item in case_results)
-    transcription_seconds = sum(
-        item.get("transcription_seconds", 0) for item in case_results
-    )
-    diarization_reference = sum(
-        item["reference_seconds"] for item in diarization_results
-    )
+    transcription_seconds = sum(item.get("transcription_seconds", 0) for item in case_results)
+    diarization_reference = sum(item["reference_seconds"] for item in diarization_results)
     diarization_errors = sum(
         item["missed_seconds"] + item["false_alarm_seconds"] + item["confusion_seconds"]
         for item in diarization_results
@@ -327,9 +365,7 @@ def benchmark(manifest_path: Path, profile: str, run_asr_enabled: bool) -> dict:
         "dependency_lock_hash": sha256_file(lock_path) if lock_path.is_file() else None,
         "model_name": str(model_path),
         "model_revision": (
-            settings.whisper_revision
-            if profile == "quality"
-            else settings.whisper_distil_revision
+            settings.whisper_revision if profile == "quality" else settings.whisper_distil_revision
         ),
         "model_file_hash": sha256_tree(model_path) if run_asr_enabled else None,
         "dataset_version": manifest.get("dataset_version", "non_versionne"),
@@ -356,6 +392,7 @@ def benchmark(manifest_path: Path, profile: str, run_asr_enabled: bool) -> dict:
                 "status": "mesure" if wer_words else "non_mesurable_sans_reference",
             },
             "extraction": score_extraction(cases, predictions),
+            "business_slots": slot_metrics(cases, predictions),
             "subgroups": subgroup_metrics(cases, case_results),
             "operational": {
                 "cases": len(cases),
@@ -395,9 +432,7 @@ def benchmark(manifest_path: Path, profile: str, run_asr_enabled: bool) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--manifest", type=Path, default=Path("data/demo/benchmark_manifest.json")
-    )
+    parser.add_argument("--manifest", type=Path, default=Path("data/demo/benchmark_manifest.json"))
     parser.add_argument("--profile", choices=("fast", "quality"), default="fast")
     parser.add_argument(
         "--run-asr",

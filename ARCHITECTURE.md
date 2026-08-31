@@ -116,6 +116,22 @@ avec `ClaimData`, conserve la priorité des règles, calcule complétude/confian
 Le worker persiste séparément données, confiances, preuves, manques, questions et trace du modèle.
 Une indisponibilité Ollama ne modifie pas le statut du job et ne supprime aucun résultat déterministe.
 
+## Conversation temps réel orientée slot
+
+La boucle interactive utilise exclusivement le modèle `fast` CPU/int8, partagé dans le processus
+Gradio et préchauffé optionnellement. À chaque tour, le moteur connaît `expected_slot` et route le
+transcript vers un parser déterministe spécialisé. Ni Pyannote, ni le profil `quality`, ni Ollama ne
+participent au chemin critique.
+
+Les champs sensibles suivent `audio conservé -> transcript Whisper -> normalisation -> confiance
+composite -> confirmation -> persistance`. Les enregistrements enrichis restent dans
+`Claim.model_trace_json.field_records`, tandis que `Claim.data_json` conserve le contrat métier
+historique. Cette stratégie évite une migration destructive.
+
+Le géocodeur est un adaptateur facultatif avec timeout, restriction `ci` et cache. Un résultat du
+gazetteer vérifie uniquement qu'un lieu est référencé ; il ne prouve jamais que l'accident s'y est
+produit. Le GPS navigateur est la position actuelle, pas nécessairement celle du sinistre.
+
 ## Modèle persistant
 
 - `User` porte l’identité et le rôle.

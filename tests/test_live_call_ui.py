@@ -4,7 +4,7 @@ from econstat.ui.app import end_live_call, start_live_call
 def test_live_call_starts_fresh_conversation_and_enables_microphone():
     state, history, _summary, status, microphone, start, end, spoken = start_live_call()
 
-    assert state["current_field"] == "nom_assure"
+    assert state["current_field"] == "lastname"
     assert history
     assert "Appel en cours" in status
     assert microphone["interactive"] is True

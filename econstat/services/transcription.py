@@ -15,7 +15,7 @@ from econstat.services.lexicon import LocalLexicon
 
 REQUIRED_MODEL_FILES = ("config.json", "model.bin", "tokenizer.json")
 CONFIDENCE_METHOD = "exp(avg_logprob), borné entre 0 et 1; indicateur ASR non calibré métier"
-_MODEL_CACHE: dict[tuple[str, str, str], Any] = {}
+_MODEL_CACHE: dict[tuple[str, str, str, int, int], Any] = {}
 _MODEL_CACHE_LOCK = threading.Lock()
 
 
@@ -93,6 +93,8 @@ class Transcriber:
             str(self.model_source.resolve()),
             self.settings.whisper_device,
             self.settings.whisper_compute_type,
+            self.settings.whisper_cpu_threads,
+            self.settings.whisper_num_workers,
         )
         with _MODEL_CACHE_LOCK:
             model = _MODEL_CACHE.get(key)
@@ -104,6 +106,8 @@ class Transcriber:
                         str(self.model_source),
                         device=self.settings.whisper_device,
                         compute_type=self.settings.whisper_compute_type,
+                        cpu_threads=self.settings.whisper_cpu_threads,
+                        num_workers=self.settings.whisper_num_workers,
                         local_files_only=not self.settings.allow_model_downloads,
                     )
                 except Exception as exc:

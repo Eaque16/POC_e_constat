@@ -1,5 +1,34 @@
 # Changelog
 
+## Tolérance aux réponses vocales incomprises
+
+- Une question n’est répétée qu’une fois après une transcription vide ou un échec du parser.
+- Au deuxième échec, la valeur métier est conservée à `null`, la cause et les deux tentatives sont
+  tracées dans `field_records`, puis le moteur passe définitivement au slot suivant.
+- La même limite protège les confirmations oui/non incomprises ; une panne technique du modèle ASR
+  reste une erreur visible et n’est pas confondue avec une réponse utilisateur manquante.
+
+## Remodelage UI ASACI et modèles locaux
+
+- Nouvelle interface conversationnelle responsive aux couleurs ASACI avec logo local, parcours en
+  quatre étapes, question courante renforcée et rappels de confiance/validation humaine.
+- Sélecteur explicite entre Whisper Tiny rapide et Whisper Small précision, tous deux locaux,
+  CPU/int8, beam 1 et mis en cache séparément dans le processus Gradio.
+- Tiny conservé par défaut après comparaison de latence dans un même processus ; aucun modèle n’est
+  téléchargé au démarrage ou lors d’un tour utilisateur.
+
+## Phase 14 — Conversation temps réel orientée slot
+
+- Benchmark cold/warm dans un même processus et comparaison contrôlée de 1/2/4/8 threads CPU.
+- Propriétaire ASR fast partagé dans Gradio, warm-up optionnel et métriques sans données personnelles.
+- Field router et parsers dédiés aux noms, épellation, téléphone, plaque, oui/non et temporalité.
+- Nom et prénom séparés, aucune correction fuzzy silencieuse et confirmation générique.
+- Dates/heures françaises ancrées au début de l'appel avec timezone Africa/Abidjan.
+- Géocodeur Nominatim facultatif, cache, timeout, restriction CI, ranking et mode hors ligne.
+- Conservation de l'audio, du transcript Whisper, de la normalisation, de la confiance et de la
+  confirmation dans la trace JSON existante, sans migration de base.
+- Correction du contrat d'authentification du mode démo : absence de compte local renvoyée en 401.
+
 ## Phase 13 — Benchmark reproductible
 
 - Script hors réseau par défaut avec registre JSON d’expériences.

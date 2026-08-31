@@ -1,0 +1,401 @@
+BILAN TECHNIQUE COMPLET — E-CONSTAT IA
+Date de l'audit : 29 août 2026
+Répertoire audité : C:\Users\KOUAMELAN Esaie\e-constat-ia
+Branche : rebuild/cpu-first
+Commit audité : deeee15 — feat: add real-time conversational claim assistant
+
+======================================================================
+1. RÉSUMÉ EXÉCUTIF
+======================================================================
+
+E-Constat IA est un POC local d'assistance à la déclaration de sinistre
+automobile, conçu pour fonctionner sur un PC Windows sans GPU NVIDIA.
+
+Le système réalisé couvre aujourd'hui :
+- une interface Gradio de conversation, de dépôt audio et de revue ;
+- une API FastAPI ;
+- une base SQLite locale, compatible PostgreSQL via SQLAlchemy ;
+- une file de traitements persistante et un worker Python séparé ;
+- la transcription française locale par Faster-Whisper sur CPU/int8 ;
+- la diarisation optionnelle par Pyannote avec repli explicite ;
+- l'extraction métier par règles, lexique ivoirien et LLM Ollama optionnel ;
+- la correction et la validation humaines obligatoires ;
+- l'export JSON et l'envoi idempotent vers un mock E-consta ;
+- un dashboard responsable, un audit, des tests et un benchmark reproductible ;
+- un assistant conversationnel temps réel ajouté dans le dernier commit.
+
+Le choix directeur est « CPU-first, local-first et human-in-the-loop » :
+les composants lourds ou distants restent facultatifs, aucun modèle n'est
+téléchargé silencieusement et aucune déclaration n'est envoyée sur la seule
+décision de l'IA.
+
+======================================================================
+2. ARCHITECTURE MONTÉE ET POURQUOI
+======================================================================
+
+2.1 Monolithe modulaire
+
+Le code est regroupé dans un seul paquet Python, econstat, mais séparé en
+frontières fonctionnelles : API, schémas, services, persistance, worker et UI.
+
+Pourquoi : pour un POC mono-poste et une petite équipe, des microservices
+ajouteraient des déploiements, des pannes réseau et de l'exploitation sans
+bénéfice démontré. Les adaptateurs gardent toutefois la possibilité de
+séparer plus tard certains services.
+
+2.2 Interface Gradio
+
+Responsabilités : conversation guidée, microphone/fichier, suivi des jobs,
+relecture des transcriptions et locuteurs, correction des champs, validation,
+export, envoi et dashboard.
+
+Pourquoi : Gradio permet de livrer rapidement une interface POC Python. Les
+calculs lourds ne sont pas exécutés dans l'interface ; ils sont déportés vers
+le worker, sauf la transcription interactive du nouveau parcours temps réel.
+
+2.3 API FastAPI
+
+Responsabilités : contrats HTTP typés, authentification JWT, contrôle de
+propriété, création des appels/dossiers, suivi et reprise des jobs, validation,
+export et intégration E-consta.
+
+Pourquoi : FastAPI apporte validation Pydantic, documentation API et séparation
+claire entre présentation, règles métier et stockage.
+
+2.4 Base SQL : SQLite maintenant, PostgreSQL possible
+
+Entités persistantes : User, Call, ProcessingJob, Claim et AuditLog.
+Alembic gère les migrations 0001 et 0002.
+
+Pourquoi SQLite : aucune installation serveur, transactions suffisantes pour
+un worker local. Pourquoi SQLAlchemy/Alembic : rendre le passage à PostgreSQL
+réversible si la concurrence et le volume l'exigent.
+
+2.5 Worker séparé et file SQL
+
+Le worker traite un job à la fois, réserve atomiquement le travail, sauvegarde
+les résultats à chaque étape et reprend depuis le dernier checkpoint.
+
+Pourquoi : la transcription CPU peut durer beaucoup plus longtemps que
+l'audio et ne doit pas bloquer une requête HTTP. Une table SQL suffit pour le
+POC ; Redis, Celery et Kafka ont volontairement été écartés tant que les
+mesures ne justifient pas leur coût.
+
+2.6 Chaîne de traitement
+
+Flux principal :
+1) contrôle et stockage sécurisé du média ;
+2) création atomique de Call + ProcessingJob ;
+3) transcription Faster-Whisper ;
+4) diarisation Pyannote ou repli INCONNU ;
+5) attribution heuristique des rôles AGENT/ASSURÉ ;
+6) extraction par règles et lexique ;
+7) complément Ollama facultatif avec JSON strict ;
+8) persistance des valeurs, confiances, preuves et champs manquants ;
+9) revue et correction humaines ;
+10) export JSON puis envoi E-consta idempotent.
+
+2.7 Intégrations isolées derrière des adaptateurs
+
+- FFmpeg/ffprobe : inspection réelle des conteneurs audio.
+- Faster-Whisper/CTranslate2 : transcription locale.
+- Pyannote : séparation optionnelle des locuteurs.
+- Ollama/Qwen : complément d'extraction optionnel.
+- EConstaClient : envoi externe avec timeout, corrélation et idempotence.
+
+Pourquoi : une indisponibilité extérieure doit être visible et contrôlée, sans
+faire tomber l'ensemble du parcours ni inventer une réussite.
+
+======================================================================
+3. MODÈLES IA INSTALLÉS ET CONFIGURÉS
+======================================================================
+
+3.1 Whisper profil rapide
+
+Chemin : models/whisper-tiny
+Format : CTranslate2
+Taille mesurée : 74,58 Mo
+Usage : profil fast, CPU, int8, langue française, beam size 1.
+Pourquoi : temps de réponse plus court pour les essais et la conversation.
+
+3.2 Whisper profil qualité
+
+Chemin : models/whisper-ct2
+Format : CTranslate2
+Taille mesurée : 2 147,06 Mo
+Fichier principal : model.bin, 2 247 627 421 octets
+Configuration source déclarée : bofenghuang/whisper-large-v3-french,
+révision e0e885752469ae13df3c68b2bc35b3fbe6293ae6.
+Usage : profil quality, CPU, int8, français, beam size 5.
+Pourquoi : offrir un profil potentiellement plus précis, exécuté en différé.
+
+Le dossier models/whisper-source (7,34 Mo) contient des éléments source ou de
+conversion. La configuration prévoit aussi le modèle distillé
+bofenghuang/whisper-large-v3-french-distil-dec16, révision
+16bd02185bdaa6b00fb4b0deb46e47ac1b754b8e, mais l'audit ne confirme pas un
+dossier CTranslate2 distinct portant ce nom.
+
+3.3 Pyannote
+
+Chemin : models/pyannote
+Configuration locale légère mesurée : 0,01 Mo, 3 fichiers.
+Modèle déclaré : pyannote/speaker-diarization-community-1.
+Nombre de locuteurs attendu par défaut : 2.
+
+Pourquoi : distinguer les tours de parole. Cette capacité reste optionnelle et
+gated ; sans token/licence/modèle chargeable, le pipeline conserve le dossier,
+attribue INCONNU et audite la cause au lieu d'échouer globalement.
+
+3.4 Ollama / Qwen
+
+Modèle réellement visible dans Ollama : qwen3:4b, 2,5 Go.
+Usage : complément LLM local d'extraction et non source principale.
+Sélection : qwen3:4b sur CPU ; des seuils sont prévus pour qwen3:8b, qwen3:14b
+et qwen3.6:27b si une VRAM suffisante est détectée.
+
+Pourquoi Qwen 4B : modèle local compatible avec une machine sans GPU puissant.
+Le LLM ne complète que les champs absents ; toute preuve non retrouvée
+littéralement dans le transcript est rejetée.
+
+3.5 Politique de modèles
+
+ALLOW_MODEL_DOWNLOADS=false par défaut. Les chemins locaux sont vérifiés avant
+chargement. Les téléchargements et empreintes passent par des scripts dédiés.
+Pourquoi : reproductibilité, maîtrise du réseau, respect des licences et
+absence de téléchargement lourd imprévu lors d'une démonstration.
+
+======================================================================
+4. OPTIMISATIONS ET GARDE-FOUS RÉALISÉS
+======================================================================
+
+Performances et sobriété :
+- exécution CPU obligatoire, quantification int8 ;
+- deux profils : fast/beam 1 et quality/beam 5 ;
+- VAD activé pour éviter de traiter inutilement les silences ;
+- cache des modèles par processus, indexé par chemin/device/compute type ;
+- cache Pyannote séparé du cache Whisper ;
+- chargement paresseux des services IA ;
+- traitement différé dans un worker, un job simultané par défaut ;
+- polling simple configurable, sans broker supplémentaire ;
+- agrégations du dashboard en Python adaptées au faible volume du POC.
+
+Fiabilité et reprise :
+- réservation SQL atomique d'un job ;
+- progression monotone, timestamps, tentatives et erreurs persistés ;
+- résultat d'étape et prochain checkpoint commités ensemble ;
+- reprise sans rejouer les étapes déjà validées ;
+- détection des jobs actifs devenus stale ;
+- retry borné à 3 par défaut ;
+- fallbacks structurés pour Pyannote et Ollama.
+
+Qualité IA et anti-hallucination :
+- règles déterministes prioritaires ;
+- lexique local adapté à la Côte d'Ivoire ;
+- contrat JSON strict pour le LLM ;
+- preuve littérale obligatoire et vérifiée ;
+- valeurs validées par les schémas Pydantic ;
+- conservation séparée des confiances, preuves, manques et questions ;
+- score Whisper exp(avg_logprob) explicitement présenté comme non calibré ;
+- correction humaine des locuteurs et des champs ;
+- double garde-fou de validation avant export/envoi.
+
+Sécurité :
+- JWT, rôles et propriété relus en base ;
+- réponse 404 lors des accès croisés pour ne pas révéler un dossier tiers ;
+- dashboard réservé au responsable ;
+- upload borné en taille et durée ;
+- validation extension, MIME, conteneur et piste audio via ffprobe ;
+- nom serveur UUID, SHA-256, écriture temporaire puis renommage atomique ;
+- nettoyage en cas de rejet ou d'échec SQL ;
+- aucun secret, audio client, modèle lourd, base locale ou export dans Git ;
+- audits minimaux sans contenu audio ni données complètes.
+
+Intégration :
+- export JSON UTF-8 versionné à la place du PDF ;
+- clé d'idempotence stable par déclaration ;
+- identifiant de corrélation par tentative ;
+- refus d'une même clé d'idempotence associée à un contenu différent ;
+- timeouts et erreurs explicites.
+
+======================================================================
+5. MODULES ET OUTILS INSTALLÉS
+======================================================================
+
+Version cible : Python 3.11.x. L'environnement virtuel .venv existe et
+« pip check » indique : No broken requirements found.
+
+Dépendances applicatives directes verrouillées :
+- alembic 1.13.2 : migrations SQL ;
+- bcrypt 4.0.1 et passlib 1.7.4 : mots de passe ;
+- fastapi 0.112.2 : API HTTP ;
+- gradio 4.44.0 : interface web ;
+- httpx 0.27.2 : clients HTTP et tests ;
+- jinja2 3.1.4 : templates ;
+- numpy 1.26.4 : calcul numérique ;
+- psycopg/psycopg-binary 3.2.1 : PostgreSQL ;
+- pydantic 2.8.2 et pydantic-settings 2.4.0 : contrats/configuration ;
+- pyjwt 2.9.0 : jetons JWT ;
+- python-multipart 0.0.9 : uploads ;
+- rapidfuzz 3.9.6 : rapprochement avec le lexique ;
+- sqlalchemy 2.0.32 : ORM SQL ;
+- uvicorn 0.30.6 : serveur ASGI.
+
+Pile IA installée dans .venv :
+- ctranslate2 4.4.0 ;
+- faster-whisper 1.0.3 ;
+- huggingface-hub 0.24.6 ;
+- pyannote.audio 3.3.2 ;
+- torch 2.4.1 ;
+- torchaudio 2.4.1.
+
+Principaux modules transitifs IA/audio observés :
+- av 12.3.0, soundfile 0.14.0, pydub 0.25.1 ;
+- transformers 4.44.2, tokenizers 0.19.1, safetensors 0.8.0 ;
+- speechbrain 1.1.0, pytorch-lightning 2.6.5, torchmetrics 1.9.0 ;
+- pyannote.core 5.0.0, pyannote.database 5.1.3,
+  pyannote.metrics 3.2.1, pyannote.pipeline 3.0.1 ;
+- scipy 1.17.1, scikit-learn 1.9.0, pandas 2.3.3 ;
+- onnxruntime 1.29.0, optuna 4.9.0.
+
+Outils de développement :
+- pytest 8.3.2 et pytest-asyncio 0.24.0 ;
+- coverage 7.6.1 ;
+- ruff 0.6.3.
+
+Outils système confirmés :
+- FFmpeg 9.0 full build ;
+- ffprobe 9.0 ;
+- Ollama avec qwen3:4b.
+
+Observation : reportlab 4.2.2 est encore présent dans .venv comme résidu, mais
+le projet a supprimé le PDF et ReportLab de ses dépendances déclarées au profit
+de l'export JSON.
+
+======================================================================
+6. MODULES MÉTIER LIVRÉS
+======================================================================
+
+- api/auth.py, api/deps.py, services/auth.py : identité, JWT et autorisations.
+- api/jobs.py, services/jobs.py, worker.py : file, progression, retry et reprise.
+- services/audio_validation.py : contrôle sécurisé des médias.
+- services/transcription.py : Faster-Whisper CPU et traces de performance.
+- services/diarization.py : Pyannote et fallback.
+- services/role_assignment.py : rôles métier et corrections.
+- services/extraction_rules.py : extraction déterministe.
+- services/lexicon.py + data/lexique_ci.json : contexte ivoirien.
+- services/extraction_llm.py : client Ollama JSON strict.
+- services/extraction.py : fusion, validation, confiance et questions.
+- services/pipeline.py : orchestration des étapes IA.
+- services/json_export.py : export versionné et protégé.
+- services/econsta.py + mock_server.py : intégration idempotente et mock.
+- services/dashboard.py : KPI agrégés du responsable.
+- services/conversation.py : dialogue déterministe de pré-déclaration.
+- services/geolocation.py : rapprochement GPS/lieu.
+- ui/app.py et ui/api_client.py : interface et client API.
+- scripts/benchmark.py : benchmark reproductible hors réseau.
+- scripts/diagnose.py, download_models.py, hash_models.py : exploitation locale.
+
+======================================================================
+7. DERNIÈRE ÉVOLUTION : ASSISTANT CONVERSATIONNEL TEMPS RÉEL
+======================================================================
+
+Le commit deeee15 ajoute un parcours de type borne/appel :
+- accueil vocal de l'assistant ;
+- saisie texte ou enregistrement microphone ;
+- transcription locale rapide ;
+- questions séquentielles et réponses FAQ ;
+- compréhension des dates dites en français, oui/non, téléphone, plaque,
+  heure, lieu, assureur et noms ;
+- correction lexicale locale ;
+- géolocalisation navigateur pour proposer le lieu proche ;
+- lecture vocale dans le navigateur via speechSynthesis ;
+- indicateur de progression et récapitulatif en direct ;
+- persistance du dossier conversationnel ;
+- validation humaine toujours annoncée à la fin.
+
+Pourquoi un moteur conversationnel déterministe : réponse rapide et stable sur
+CPU, comportement explicable, aucune dépendance obligatoire à un LLM distant et
+meilleure maîtrise des informations obligatoires.
+
+======================================================================
+8. MESURES ET VALIDATIONS DISPONIBLES
+======================================================================
+
+Machine historique de benchmark : Intel Core i5-10210U, 7,8 Go RAM, Windows.
+
+Mesures exploratoires Faster-Whisper (chargement du modèle inclus) :
+- fast, silence 1 s : 25,934 s, aucun segment inventé ;
+- quality, silence 1 s : 145,589 s, aucun segment inventé ;
+- fast, voix synthétique 3,08 s : 29,743 s, facteur temps réel 9,657.
+
+Conclusion : le profil quality doit rester en traitement différé sur cette
+machine. Ces chiffres prouvent l'exécution, pas la précision sur le français.
+
+Baseline déterministe sur 5 textes synthétiques :
+- précision micro : 1,000000 ;
+- rappel micro : 0,937500 ;
+- F1 micro : 0,967742 ;
+- F1 macro : 0,909091 ;
+- aucune prédiction sans vérité terrain ;
+- 20 % des cas nécessitent une correction ;
+- temps total extraction : 0,082957 s.
+
+Limite : corpus minuscule et synthétique. WER français, DER et qualité sur
+accents/bruit réels restent à mesurer sur un corpus consenti et annoté.
+
+Les phases documentées ont progressivement atteint 62 tests réussis, puis des
+tests end-to-end et de benchmark ont été ajoutés. Cependant, l'état courant du
+29 août 2026 n'est pas entièrement vert : « pytest -x -q » réussit un test puis
+échoue sur test_missing_and_invalid_tokens_are_rejected. L'API renvoie 503 à
+une requête sans jeton alors que le test attend 401.
+
+======================================================================
+9. LIMITES, RISQUES ET ACTIONS PRIORITAIRES
+======================================================================
+
+1) Corriger la régression d'authentification du mode conversationnel. La
+fonction UI require_token retourne actuellement une chaîne vide et le test
+d'accès anonyme reçoit 503 au lieu de 401. Il faut clarifier si la borne doit
+utiliser un compte technique local ou une authentification utilisateur, puis
+restaurer un contrat cohérent et testé.
+
+2) Rejouer toute la suite pytest et Ruff après correction. L'audit courant ne
+peut pas déclarer le commit final entièrement validé.
+
+3) Mesurer la précision sur un corpus français/ivoirien annoté et consenti :
+WER, DER, exactitude des rôles, F1 des champs et taux de corrections.
+
+4) La vraie diarisation Pyannote n'était pas validée dans les phases décrites,
+faute de token/configuration locale complète. Confirmer la licence, le modèle
+et un test réel avant toute promesse produit.
+
+5) Le test Ollama qwen3:4b historique a expiré à 120 s puis produit une sortie
+non JSON. Le fallback fonctionne, mais le LLM reste trop lent/non fiable pour
+être une dépendance critique sur cette machine.
+
+6) SQLite et un worker conviennent au POC mono-poste. Passer à PostgreSQL,
+plusieurs workers ou une file dédiée seulement après mesure de la concurrence.
+
+7) Le POC ne doit pas être présenté comme un système de production : secrets,
+durcissement du déploiement, sauvegardes, supervision, conformité, politique de
+rétention et tests de charge restent à industrialiser.
+
+======================================================================
+10. CONCLUSION
+======================================================================
+
+Le projet dispose d'une architecture cohérente, sobre et largement traçable.
+Les décisions principales répondent bien aux contraintes d'un PC Windows CPU :
+monolithe modulaire, worker SQL, modèles locaux quantifiés, règles prioritaires,
+fallbacks explicites et validation humaine. La pile technique et les modèles
+nécessaires sont effectivement présents sur la machine.
+
+Le principal point à traiter avant une nouvelle démonstration est la régression
+d'authentification introduite ou révélée par le dernier parcours conversationnel.
+Après sa correction, il faudra rétablir une suite complète de tests verte et
+réaliser l'évaluation métier sur des données représentatives.
+
+Sources locales consultées : ARCHITECTURE.md, DECISIONS.md, CHANGELOG.md,
+BENCHMARK.md, README.md, pyproject.toml, requirements.lock, configuration,
+services, scripts, tests, historique Git, .venv, dossiers models, FFmpeg et
+inventaire Ollama.

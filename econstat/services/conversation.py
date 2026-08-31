@@ -2,16 +2,20 @@
 
 import re
 import unicodedata
-from datetime import date, datetime, time
+from datetime import UTC, date, datetime, time
 
 from econstat.config import get_settings
 from econstat.schemas.claim import QUESTION_TEMPLATES, ClaimData
+from econstat.services.confirmation import needs_confirmation
+from econstat.services.field_router import parse_expected_field
 from econstat.services.lexicon import LocalLexicon
+from econstat.services.location import LocationResolver
+from econstat.services.parsers.yes_no_parser import parse_yes_no
 
 WELCOME_MESSAGE = (
     "Bonjour, je suis l’assistant de pré-déclaration automobile. "
     "Je vais recueillir les informations utiles concernant votre accident.\n\n"
-    "Pouvez-vous me donner votre nom complet ?"
+    "Quel est votre nom de famille ?"
 )
 
 FAQ = (
@@ -51,13 +55,14 @@ FAQ = (
 )
 
 FLOW = (
-    "nom_assure",
-    "telephone_assure",
+    "lastname",
+    "firstname",
+    "phone",
     "assureur",
-    "plaque",
-    "date_accident",
-    "heure_accident",
-    "lieu",
+    "vehicle_plate",
+    "accident_date",
+    "accident_time",
+    "location",
     "type_accident",
     "nombre_vehicules",
     "tiers_impliques",
@@ -66,6 +71,27 @@ FLOW = (
     "zone_endommagee",
     "vehicule_immobilise",
 )
+
+SLOT_QUESTIONS = {
+    "lastname": "Quel est votre nom de famille ?",
+    "firstname": "Quel est votre prénom ?",
+    "phone": QUESTION_TEMPLATES["telephone_assure"],
+    "vehicle_plate": QUESTION_TEMPLATES["plaque"],
+    "accident_date": QUESTION_TEMPLATES["date_accident"],
+    "accident_time": QUESTION_TEMPLATES["heure_accident"],
+    "location": QUESTION_TEMPLATES["lieu"],
+    **QUESTION_TEMPLATES,
+}
+
+DATA_KEYS = {
+    "phone": "telephone_assure",
+    "vehicle_plate": "plaque",
+    "accident_date": "date_accident",
+    "accident_time": "heure_accident",
+    "location": "lieu",
+    "third_party": "tiers_impliques",
+    "yes_no": "vehicule_immobilise",
+}
 
 MONTHS = {
     "janvier": 1,
@@ -158,8 +184,15 @@ def parse_spoken_date(raw: str, today: date | None = None) -> str | None:
 def new_conversation() -> dict:
     return {
         "data": {},
+        "field_records": {},
         "transcript": [f"ASSISTANT: {WELCOME_MESSAGE}"],
-        "current_field": "nom_assure",
+        "current_field": "lastname",
+        "call_started_at": datetime.now(UTC).isoformat(),
+        "pending_confirmation": None,
+        "pending_field": None,
+        "attempts": {},
+        "skipped_fields": [],
+        "spelling_mode": False,
     }
 
 
@@ -213,35 +246,205 @@ def _faq_answer(text: str) -> str | None:
     return None
 
 
-def _next_field(data: dict) -> str | None:
-    return next((field for field in FLOW if data.get(field) is None), None)
+def _next_field(data: dict, skipped_fields: list[str] | None = None) -> str | None:
+    skipped = set(skipped_fields or [])
+    return next(
+        (
+            field
+            for field in FLOW
+            if field not in skipped and data.get(DATA_KEYS.get(field, field)) is None
+        ),
+        None,
+    )
 
 
 def progress(data: dict) -> int:
-    return round(100 * sum(data.get(field) is not None for field in FLOW) / len(FLOW))
+    return round(
+        100 * sum(data.get(DATA_KEYS.get(field, field)) is not None for field in FLOW) / len(FLOW)
+    )
 
 
-def respond(message: str, state: dict | None) -> tuple[str, dict]:
+def _confirmation_prompt(result: dict) -> str:
+    value = result.get("normalized")
+    if result["slot"] == "location" and result.get("verification_status") == "ambiguous":
+        return (
+            "Je trouve plusieurs lieux correspondants. Pouvez-vous préciser la commune "
+            "ou un repère proche ?"
+        )
+    if result["slot"] in {"accident_date", "accident_time", "accident_datetime"}:
+        return f"J’ai noté {value}. Est-ce correct ?"
+    return f"J’ai compris « {value} ». Est-ce correct ?"
+
+
+def _store_result(state: dict, result: dict) -> None:
+    slot = result["slot"]
+    state["field_records"][slot] = result
+    state["data"][DATA_KEYS.get(slot, slot)] = result["normalized"]
+    if state["data"].get("lastname") and state["data"].get("firstname"):
+        state["data"]["nom_assure"] = f"{state['data']['firstname']} {state['data']['lastname']}"
+
+
+def _skip_unusable_field(state: dict, field: str, result: dict, reason: str) -> None:
+    """Conserve un échec explicite et permet au parcours d'avancer après deux essais."""
+    record = {
+        **result,
+        "normalized": None,
+        "confirmed": False,
+        "confidence": 0.0,
+        "metadata": {
+            **result.get("metadata", {}),
+            "collection_status": "missing_after_two_attempts",
+            "failure_reason": reason,
+            "attempt_count": state["attempts"].get(field, 0),
+        },
+    }
+    state["field_records"][record["slot"]] = record
+    state["data"][DATA_KEYS.get(field, field)] = None
+    state["skipped_fields"] = [*dict.fromkeys([*state.get("skipped_fields", []), field])]
+    state["spelling_mode"] = False
+
+
+def respond(
+    message: str,
+    state: dict | None,
+    *,
+    asr_confidence: float = 0.75,
+    location_resolver: LocationResolver | None = None,
+    audio_reference: str | None = None,
+) -> tuple[str, dict]:
     state = state or new_conversation()
-    data = dict(state.get("data", {}))
+    state = {
+        **state,
+        "data": dict(state.get("data", {})),
+        "field_records": dict(state.get("field_records", {})),
+        "attempts": dict(state.get("attempts", {})),
+        "skipped_fields": list(state.get("skipped_fields", [])),
+    }
+    data = state["data"]
     transcript = list(state.get("transcript", []))
     transcript.append(f"CLIENT: {message.strip()}")
-    field = state.get("current_field") or _next_field(data)
+    field = state.get("current_field") or _next_field(data, state["skipped_fields"])
+    pending = state.get("pending_confirmation")
+    if field == "confirmation" and pending:
+        answer = parse_yes_no(message)
+        if answer is True:
+            pending = {**pending, "confirmed": True}
+            pending["confidence_components"] = {
+                **pending.get("confidence_components", {}),
+                "confirmation": 1.0,
+            }
+            pending["confidence"] = max(float(pending.get("confidence", 0)), 0.95)
+            _store_result(state, pending)
+            state["pending_confirmation"] = None
+            state["pending_field"] = None
+            state["spelling_mode"] = False
+            field = _next_field(data, state["skipped_fields"])
+            reply = (
+                f"Merci. {SLOT_QUESTIONS[field]}"
+                if field
+                else (
+                    "Merci. Les informations essentielles sont recueillies. "
+                    "Un agent humain devra les contrôler."
+                )
+            )
+        elif answer is False:
+            original_slot = state.get("pending_field") or pending["slot"]
+            state["pending_confirmation"] = None
+            state["pending_field"] = None
+            state["attempts"][original_slot] = state["attempts"].get(original_slot, 0) + 1
+            if state["attempts"][original_slot] >= 2:
+                _skip_unusable_field(
+                    state, original_slot, pending, "user_rejected_two_transcriptions"
+                )
+                field = _next_field(data, state["skipped_fields"])
+                reply = (
+                    "Je laisse cette information vide et je continue.\n\n"
+                    f"{SLOT_QUESTIONS[field]}"
+                    if field
+                    else (
+                        "Je laisse cette information vide. Le recueil est terminé et devra "
+                        "être contrôlé par un agent."
+                    )
+                )
+            else:
+                state["spelling_mode"] = original_slot in {"firstname", "lastname"}
+                field = original_slot
+                reply = (
+                    "Pouvez-vous l’épeler lettre par lettre ?"
+                    if state["spelling_mode"]
+                    else f"D’accord. {SLOT_QUESTIONS[field]}"
+                )
+        else:
+            original_slot = pending["slot"]
+            attempt_key = f"confirmation:{original_slot}"
+            state["attempts"][attempt_key] = state["attempts"].get(attempt_key, 0) + 1
+            if state["attempts"][attempt_key] >= 2:
+                expected_field = state.get("pending_field") or original_slot
+                state["attempts"][expected_field] = max(
+                    2, state["attempts"].get(expected_field, 0)
+                )
+                _skip_unusable_field(
+                    state, expected_field, pending, "confirmation_not_understood"
+                )
+                state["pending_confirmation"] = None
+                state["pending_field"] = None
+                field = _next_field(data, state["skipped_fields"])
+                reply = (
+                    f"Je n’ai pas pu confirmer cette information ; je la laisse vide. "
+                    f"{SLOT_QUESTIONS[field]}"
+                    if field
+                    else "Je laisse cette information vide. Le recueil est terminé."
+                )
+            else:
+                reply = "Répondez simplement par oui ou non : est-ce correct ?"
+        state["current_field"] = field
+        transcript.append(f"ASSISTANT: {reply}")
+        state["transcript"] = transcript
+        return reply, state
     if faq := _faq_answer(message):
-        reply = (
-            f"{faq}\n\nReprenons la pré-déclaration : {QUESTION_TEMPLATES[field]}" if field else faq
-        )
+        reply = f"{faq}\n\nReprenons la pré-déclaration : {SLOT_QUESTIONS[field]}" if field else faq
     elif not field:
         reply = "La pré-déclaration est complète. Vérifiez le récapitulatif puis créez le dossier."
     else:
-        value = _parse(field, message)
-        if value is None:
-            reply = f"Je n’ai pas pu confirmer cette information. {QUESTION_TEMPLATES[field]}"
+        context = {
+            "call_started_at": state.get("call_started_at"),
+            "spelling_mode": state.get("spelling_mode", False),
+            "location_resolver": location_resolver,
+            "gps": state.get("gps"),
+            "audio_reference": audio_reference,
+        }
+        result = parse_expected_field(field, message, context, asr_confidence=asr_confidence)
+        if result.get("normalized") is None:
+            state["attempts"][field] = state["attempts"].get(field, 0) + 1
+            if state["attempts"][field] >= 2:
+                _skip_unusable_field(state, field, result, "transcription_or_parser_failed")
+                field = _next_field(data, state["skipped_fields"])
+                reply = (
+                    "Je n’ai toujours pas pu comprendre cette information ; je la laisse "
+                    f"vide et je continue.\n\n{SLOT_QUESTIONS[field]}"
+                    if field
+                    else (
+                        "Je n’ai toujours pas pu comprendre cette information ; je la laisse "
+                        "vide. Le recueil est terminé et devra être contrôlé par un agent."
+                    )
+                )
+            elif field in {"firstname", "lastname"}:
+                state["spelling_mode"] = True
+                reply = "Je n’ai pas bien compris. Pouvez-vous le répéter ou l’épeler ?"
+            elif field == "location":
+                reply = "Pouvez-vous préciser la commune, le quartier ou un repère proche ?"
+            else:
+                reply = f"Je n’ai pas pu confirmer cette information. {SLOT_QUESTIONS[field]}"
+        elif needs_confirmation(result):
+            state["pending_confirmation"] = result
+            state["pending_field"] = field
+            field = "confirmation"
+            reply = _confirmation_prompt(result)
         else:
-            data[field] = value
-            field = _next_field(data)
+            _store_result(state, result)
+            field = _next_field(data, state["skipped_fields"])
             if field:
-                reply = f"Merci, c’est noté.\n\n{QUESTION_TEMPLATES[field]}"
+                reply = f"Merci, c’est noté.\n\n{SLOT_QUESTIONS[field]}"
             else:
                 reply = (
                     "Merci. Les informations essentielles sont recueillies. Vérifiez le "
@@ -251,7 +454,6 @@ def respond(message: str, state: dict | None) -> tuple[str, dict]:
     transcript.append(f"ASSISTANT: {reply}")
     return reply, {
         **state,
-        "data": data,
         "transcript": transcript,
         "current_field": field,
     }
@@ -268,4 +470,7 @@ def summary_markdown(state: dict | None) -> str:
 
 
 def validated_data(state: dict) -> ClaimData:
-    return ClaimData.model_validate(state.get("data", {}))
+    data = dict(state.get("data", {}))
+    if data.get("firstname") and data.get("lastname"):
+        data["nom_assure"] = f"{data['firstname']} {data['lastname']}"
+    return ClaimData.model_validate(data)

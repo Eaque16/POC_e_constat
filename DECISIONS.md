@@ -156,3 +156,28 @@ désigne toujours la prochaine étape à exécuter.
 **Conséquences** : certains faits paraphrasés restent manquants et nécessitent une correction humaine.
 
 **Réversibilité** : les règles et le client LLM sont séparés et peuvent évoluer indépendamment.
+
+## ADR-015 — Parsing conversationnel orienté slot
+
+**Contexte** : une question guidée fournit déjà le type de donnée attendu ; l'extraction générale
+ajoute latence et ambiguïtés, notamment pour les noms et les dates.
+
+**Choix** : `expected_slot` route directement le transcript fast vers un parser spécialisé, puis une
+validation et une confirmation générique. Ollama, Pyannote et Whisper quality sont exclus du chemin.
+
+**Pourquoi** : réduire la latence, rendre les décisions explicables et conserver brut, normalisé,
+confiance et confirmation sans correction silencieuse des noms.
+
+**Conséquences** : les nouveaux slots prénom/nom sont recomposés vers `nom_assure` pour préserver le
+schéma métier existant. Les scores sont des indicateurs non calibrés.
+
+## ADR-016 — Vérification géographique facultative
+
+**Contexte** : le lexique local normalise mais ne vérifie pas l'existence d'un lieu ; le réseau peut
+être absent et le GPS actuel peut différer du lieu du sinistre.
+
+**Choix** : protocole `Geocoder`, implémentation Nominatim optionnelle, timeout, cache, restriction CI,
+classement explicable et fallback local structuré.
+
+**Conséquences** : `verified_in_gazetteer` ne signifie jamais « accident prouvé à cet endroit ».
+Les états disabled, timeout, provider_unavailable, not_found et ambiguous sont conservés.

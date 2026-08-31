@@ -1,8 +1,8 @@
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -45,8 +45,39 @@ from econstat.services.econsta import EConstaClient, EConstaError, EConstaTimeou
 from econstat.services.extraction import HybridExtractor
 from econstat.services.jobs import create_job
 from econstat.services.json_export import generate_claim_json
+from econstat.services.realtime_transcription import get_realtime_transcriber
+from econstat.services.transcription import TranscriptionError
 
 router = APIRouter()
+
+
+@router.post("/transcription/chunk")
+async def transcribe_live_chunk(
+    request: Request,
+    _: User = Depends(current_user),
+):
+    """Transcrit un segment WebM court envoyé par le frontend React."""
+    audio = await request.body()
+    if not audio:
+        raise HTTPException(422, "Segment audio vide.")
+    if len(audio) > 10 * 1024 * 1024:
+        raise HTTPException(413, "Segment audio trop volumineux.")
+    settings = get_settings()
+    chunk_dir = settings.recordings_dir / ".stream"
+    chunk_dir.mkdir(parents=True, exist_ok=True)
+    chunk_path = chunk_dir / f"{uuid.uuid4()}.webm"
+    chunk_path.write_bytes(audio)
+    try:
+        result = get_realtime_transcriber(settings, "precision").transcribe(chunk_path)
+    except TranscriptionError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    finally:
+        chunk_path.unlink(missing_ok=True)
+    return {
+        "speaker": "assure",
+        "text": result.text,
+        "confidence": result.confidence,
+    }
 
 
 class ClaimUpdate(BaseModel):
@@ -61,6 +92,7 @@ class ConversationClaimRequest(BaseModel):
     data: ClaimData
     transcript: list[str]
     claim_id: str | None = None
+    field_records: dict[str, dict] = Field(default_factory=dict)
 
 
 def claim_review_response(claim: Claim) -> ClaimReviewResponse:
@@ -275,6 +307,11 @@ def create_conversation_claim(
         claim.missing_fields_json = missing
         claim.questions_json = [QUESTION_TEMPLATES[field] for field in missing]
         claim.global_confidence = len(confidence) / len(REQUIRED_FIELDS)
+        claim.model_trace_json = {
+            **(claim.model_trace_json or {}),
+            "source": "guided_conversation",
+            "field_records": body.field_records,
+        }
         action = "conversation_claim_updated"
     else:
         call = Call(
@@ -294,7 +331,11 @@ def create_conversation_claim(
             missing_fields_json=missing,
             questions_json=[QUESTION_TEMPLATES[field] for field in missing],
             global_confidence=len(confidence) / len(REQUIRED_FIELDS),
-            model_trace_json={"source": "guided_conversation", "ai_proposal": data},
+            model_trace_json={
+                "source": "guided_conversation",
+                "ai_proposal": data,
+                "field_records": body.field_records,
+            },
             status=ClaimStatus.pending_validation,
         )
         db.add(claim)

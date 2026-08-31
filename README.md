@@ -1,5 +1,21 @@
 # E-Constat IA
 
+## Interface React fusionnée
+
+Le frontend réalisé par l’équipe ASA-CI Technologie est intégré dans `frontend/` et harmonisé
+avec l’API Python existante. Il utilise les vraies routes `/api/claims` et `/api/dashboard`, et
+envoie les segments microphone à `/api/transcription/chunk`. Les données de démonstration ne sont
+plus utilisées pour le dashboard principal.
+
+Lancer d’abord le backend avec `run-local.ps1`, puis l’interface React :
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run-frontend.ps1
+```
+
+Ouvrir `http://127.0.0.1:5173`. L’ancienne interface Gradio reste disponible sur le port 7860
+comme solution de secours pendant la transition.
+
 ## Assistant conversationnel client
 
 Le parcours principal est un dialogue guidé de pré-déclaration automobile. Il :
@@ -14,6 +30,12 @@ Le parcours principal est un dialogue guidé de pré-déclaration automobile. Il
 En mode local, aucune connexion n’est demandée. L’appel démarre depuis la première page :
 chaque prise microphone est transcrite automatiquement dès son arrêt, ajoutée au fil visible,
 puis traitée par l’agent qui affiche et lit sa réponse sur le même écran.
+
+L’écran conversationnel reprend l’identité visuelle orange et verte de l’ASACI et affiche le logo
+local `econstat/ui/assets/asaci-logo.png`. Deux modèles déjà installés sont proposés sans aucun
+téléchargement automatique : **Rapide** (`models/whisper-tiny`, choix par défaut) et **Précision**
+(`models/whisper-small`, pour les noms ou lieux difficiles). Small reste en beam 1 et ne remplace
+pas le profil différé `quality`.
 
 L’assistant ne détermine ni la responsabilité ni le montant d’une indemnisation. Les délais et
 pièces pouvant dépendre du contrat, ses réponses invitent le client à confirmer auprès de son
@@ -151,6 +173,16 @@ sont `agent.demo / DemoAgent2026!` et `responsable.demo / DemoResp2026!`.
 
 ## Parcours de l’interface
 
+Le parcours vocal POC affiche quatre repères simples : réponse, transcription, confirmation et
+validation humaine. Le mode ASR se choisit directement sous la question courante. La valeur
+`REALTIME_ASR_DEFAULT_MODE=fast` permet de modifier le choix initial ; `fast` est recommandé sur la
+machine de référence, où Small est sensiblement plus lent.
+
+Une information incomprise est demandée une seconde et dernière fois. Si la seconde transcription
+ou normalisation échoue également, le champ est enregistré explicitement à `null`, avec une trace
+`missing_after_two_attempts`, puis l’assistant poursuit la déclaration. Une panne du modèle ou un
+fichier audio inaccessible reste en revanche une erreur technique et ne consomme pas une tentative.
+
 L’interface ne charge aucun modèle IA et ne lance aucun calcul lourd. Elle permet de se connecter,
 de téléverser ou enregistrer un audio de démonstration, de choisir `fast` ou `quality`, puis de suivre
 le job par actualisation. Le worker reste un processus séparé lancé avec `run-worker.ps1`.
@@ -243,6 +275,24 @@ explicites :
 .\.venv\Scripts\python.exe scripts\download_models.py --source <depot-ct2> `
   --destination models\<nom> --confirm-download
 .\.venv\Scripts\python.exe scripts\hash_models.py models\whisper-tiny
+```
+
+### Conversation rapide orientée slot
+
+Le microphone utilise uniquement `models/whisper-tiny`, CPU/int8, beam 1, VAD et un modèle partagé
+dans le processus UI. `REALTIME_ASR_WARMUP=true` précharge le modèle en arrière-plan. Le transcript
+est envoyé au parser du champ attendu ; Ollama, Pyannote et le profil quality ne sont pas appelés.
+
+Les noms sont confirmés et peuvent être épelés. Les dates sont ancrées au début de l'appel dans
+`Africa/Abidjan`. Le géocodage Nominatim est désactivé par défaut, facultatif, limité à la Côte
+d'Ivoire, mis en cache et borné par timeout. Activez-le avec `GEOCODING_ENABLED=true` seulement si
+le réseau est autorisé. Un lieu référencé n'est pas une preuve du lieu réel de l'accident.
+
+Benchmark local :
+
+```powershell
+.\.venv\Scripts\python.exe scripts\benchmark_realtime_asr.py test-micro.wav `
+  --runs 5 --cpu-threads 8 --num-workers 1
 ```
 
 ## Diarisation et rôles

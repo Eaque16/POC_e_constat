@@ -1,0 +1,31 @@
+﻿/*
+  Tokens ASA-CI TECHNOLOGIE Ã  fusionner dans src/index.css,
+  dans le bloc :root { ... } existant (gÃ©nÃ©rÃ© par shadcn).
+  Ne remplace pas les variables dÃ©jÃ  prÃ©sentes (--background,
+  --foreground, etc.) : ajoute/Ã©crase seulement celles ci-dessous.
+*/
+
+:root {
+  /* IdentitÃ© ASA-CI : bleu foncÃ© / bleu / blanc / gris clair */
+  --primary: 217 91% 22%;           /* bleu foncÃ© */
+  --primary-foreground: 0 0% 100%;
+
+  --sidebar: 217 91% 14%;           /* sidebar bleu foncÃ© */
+  --sidebar-foreground: 210 20% 90%;
+  --sidebar-primary: 213 94% 55%;   /* bleu accent actif */
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 217 60% 20%;
+  --sidebar-accent-foreground: 0 0% 100%;
+  --sidebar-border: 217 60% 20%;
+
+  --background: 0 0% 100%;
+  --foreground: 222 20% 15%;
+  --muted: 210 20% 96%;
+  --muted-foreground: 215 15% 45%;
+  --border: 214 20% 90%;
+
+  /* Ã‰tats mÃ©tier */
+  --success: 142 71% 35%;    /* vert = validÃ© */
+  --warning: 32 95% 50%;     /* orange = attention */
+  --destructive: 0 72% 51%;  /* rouge = urgence */
+}

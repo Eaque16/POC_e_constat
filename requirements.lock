@@ -1,6 +1,7 @@
 # Export reproductible correspondant à pyproject.toml (runtime + dev, Python 3.11).
 alembic==1.13.2
 bcrypt==4.0.1
+dateparser==1.4.2
 coverage==7.6.1
 fastapi==0.112.2
 gradio==4.44.0

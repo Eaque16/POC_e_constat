@@ -36,3 +36,10 @@ def nearest_place(latitude: float, longitude: float) -> tuple[str, float]:
         key=lambda item: item[1],
     )
     return place, round(kilometers, 1)
+
+
+def haversine_meters(first: tuple[float, float], second: tuple[float, float]) -> float:
+    lat1, lon1, lat2, lon2 = map(radians, (*first, *second))
+    delta_lat, delta_lon = lat2 - lat1, lon2 - lon1
+    value = sin(delta_lat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(delta_lon / 2) ** 2
+    return 6371000 * 2 * asin(sqrt(value))

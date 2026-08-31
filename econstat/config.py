@@ -25,19 +25,26 @@ class Settings(BaseSettings):
     lexicon_path: Path = Field(default=Path("data/lexique_ci.json"))
     max_audio_mb: int = 100
     max_audio_duration_seconds: int = 7200
-    allowed_audio_extensions: str = ".wav,.mp3,.m4a,.ogg,.flac"
+    allowed_audio_extensions: str = ".wav,.mp3,.m4a,.ogg,.flac,.webm"
     allow_model_downloads: bool = False
     processing_profile: str = "fast"
     job_stale_minutes: int = 30
     job_poll_seconds: float = 2.0
     job_max_retries: int = 3
     whisper_fast_model: str = "models/whisper-tiny"
+    whisper_small_model: str = "models/whisper-small"
     whisper_quality_model: str = "models/whisper-ct2"
     whisper_device: str = "cpu"
     whisper_compute_type: str = "int8"
     whisper_language: str = "fr"
     whisper_fast_beam_size: int = 1
     whisper_quality_beam_size: int = 5
+    whisper_cpu_threads: int = 8
+    whisper_num_workers: int = 1
+    realtime_asr_warmup: bool = True
+    # La saisie concerne surtout des noms, numéros, assureurs et lieux ivoiriens :
+    # le petit modèle reste disponible, mais ne doit pas être le choix par défaut.
+    realtime_asr_default_mode: str = "precision"
     whisper_model: str = "bofenghuang/whisper-large-v3-french"
     whisper_revision: str = "e0e885752469ae13df3c68b2bc35b3fbe6293ae6"
     whisper_distil_model: str = "bofenghuang/whisper-large-v3-french-distil-dec16"
@@ -63,6 +70,16 @@ class Settings(BaseSettings):
     econsta_base_url: str = "http://127.0.0.1:8001"
     econsta_api_key: str = "demo-local-key"
     econsta_timeout_seconds: float = 15.0
+    geocoding_enabled: bool = False
+    geocoding_provider: str = "nominatim"
+    geocoding_country_code: str = "ci"
+    geocoding_timeout_seconds: float = 3.0
+    geocoding_user_agent: str = "e-constat-ia-poc/0.1"
+    geocoding_cache_ttl_seconds: int = 86400
+    location_lexical_weight: float = 0.45
+    location_commune_weight: float = 0.20
+    location_gazetteer_weight: float = 0.25
+    location_gps_weight: float = 0.10
 
     @property
     def access_token_minutes(self) -> int:

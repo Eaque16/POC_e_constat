@@ -24,10 +24,10 @@ def current_user(
     db: Session = Depends(get_db),
 ) -> User:
     settings = get_settings()
-    if settings.disable_auth:
+    if settings.disable_auth and credentials is None:
         user = db.query(User).filter(User.username == "agent.demo").first()
         if not user:
-            raise HTTPException(503, "Compte agent.demo non initialisé")
+            raise unauthorized("Mode démo demandé mais compte agent.demo non initialisé")
         return user
     try:
         if credentials is None:
@@ -47,6 +47,11 @@ def current_user(
 
 
 def responsable(user: User = Depends(current_user)) -> User:
+    # Le mode de démonstration local n'affiche pas d'écran de connexion : il doit
+    # pouvoir présenter le dashboard global. Cette exception ne s'applique jamais
+    # lorsque l'authentification est active.
+    if get_settings().disable_auth:
+        return user
     if user.role != Role.responsable:
         raise HTTPException(403, "Rôle responsable requis")
     return user

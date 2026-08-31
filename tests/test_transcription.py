@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from econstat.config import Settings
+from econstat.services.realtime_transcription import RealtimeTranscriber
 from econstat.services.transcription import (
     Transcriber,
     TranscriptionError,
@@ -36,6 +37,26 @@ def test_profile_selects_local_model_and_beam_size(tmp_path):
     with pytest.raises(TranscriptionError) as error:
         Transcriber(settings, "turbo")
     assert error.value.code == "whisper_profile_invalid"
+
+
+def test_realtime_modes_select_tiny_or_small_without_download(tmp_path):
+    tiny = tmp_path / "tiny"
+    small = tmp_path / "small"
+    settings = Settings(
+        disable_auth=True,
+        whisper_fast_model=str(tiny),
+        whisper_small_model=str(small),
+    )
+
+    fast = RealtimeTranscriber(settings, "fast")
+    precision = RealtimeTranscriber(settings, "precision")
+
+    assert fast._transcriber.model_source == tiny
+    assert precision._transcriber.model_source == small
+    assert fast._transcriber.beam_size == 1
+    assert precision._transcriber.beam_size == 1
+    with pytest.raises(ValueError, match="Mode ASR interactif inconnu"):
+        RealtimeTranscriber(settings, "quality")
 
 
 def test_incomplete_model_fails_without_downloading(tmp_path):

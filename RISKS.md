@@ -1,5 +1,16 @@
 # Registre des risques
 
+## Conversation vocale et géolocalisation — ajout 2026-08-30
+
+- Les fichiers audio conversationnels contiennent des données personnelles : définir rétention,
+  chiffrement, purge et accès avant production. Ils restent hors Git.
+- Le score composite et `exp(avg_logprob)` ne sont pas des probabilités calibrées : confirmation
+  humaine obligatoire pour les champs sensibles.
+- Nominatim peut être lent, indisponible ou retourner plusieurs candidats : timeout, cache et états
+  dégradés sont obligatoires ; aucun test ne dépend du réseau.
+- Un résultat de gazetteer ne prouve pas le lieu réel du sinistre ; le GPS courant peut être éloigné.
+- `cpu_threads=8` est optimal uniquement sur la machine mesurée et doit rester configurable.
+
 | ID | Risque | Probabilité | Impact | Mitigation | Owner | Statut |
 |---|---|---:|---:|---|---|---|
 | R01 | Traitement CPU lent | Élevée | Élevé | int8, profils, worker, benchmark, aucune promesse temps réel | Lead IA | Ouvert |

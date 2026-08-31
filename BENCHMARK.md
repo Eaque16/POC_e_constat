@@ -83,5 +83,47 @@ Windows CPU, cinq transcriptions synthétiques, LLM désactivé et aucun ASR ex�
 Échec observé : le numéro `0708091011` dicté entièrement en lettres n’est pas extrait. Le corpus est
 minuscule et construit pour tester les règles ; ces scores ne permettent aucune conclusion sur des
 appels réels, le bruit ou les accents. WER, facteur temps réel ASR et DER restent non mesurables faute
-d’audio français annoté et de tours de parole de référence. Le détail traçable est conservé dans
+d'audio français annoté et de tours de parole de référence. Le détail traçable est conservé dans
 `experiments/baseline-rules-synthetic-v1.json`.
+
+## Benchmark ASR interactif même processus — 2026-08-30
+
+Commande : `python scripts/benchmark_realtime_asr.py test-micro.wav --runs 5 --cpu-threads N`.
+Machine : Intel Core i5-10210U, 8 processeurs logiques, CPU/int8, un worker. Audio synthétique de
+11,818 s. Chaque variante charge une seule fois le modèle fast, effectue un warm-up, puis cinq tours.
+
+| Threads | ASR médian | Tour médian | p95 tour | RTF médian |
+|---:|---:|---:|---:|---:|
+| défaut CTranslate2 (avant) | 2,589 s | 3,182 s | 3,851 s | 0,269 |
+| 1 | 4,813 s | 5,651 s | 6,372 s | 0,478 |
+| 2 | 2,708 s | 3,292 s | 3,697 s | 0,279 |
+| 4 | 2,111 s | 2,860 s | 2,889 s | 0,242 |
+| 8 (retenu sur cette machine) | 1,958 s | 2,510 s | 2,983 s | 0,212 |
+
+Le cold start de référence était 26,121 s, dominé par 19,105 s d'imports et le premier warm-up.
+Le préchauffage déplace ce coût avant le premier tour. Huit threads réduisent le tour warm médian
+de 0,672 s (21,1 %) sur cette mesure, sans augmenter `num_workers`. Ce choix reste configurable et
+doit être remesuré sur une autre machine. Les résultats ne mesurent pas la précision métier.
+
+Le benchmark sépare import, modèle, décodage, VAD, ASR, parser, commit SQLite et total ; il n'appelle
+ni réseau, ni Ollama, ni Pyannote.
+
+Mesure finale après intégration du routeur et de la persistance instrumentée, même configuration
+8 threads : cold start 18,313 s ; ASR warm médian 1,798 s ; commit SQLite médian 0,003 s ; tour warm
+médian 2,173 s ; p95 2,299 s ; RTF médian 0,184. Les variations de cold start entre processus sont
+importantes sur Windows ; la comparaison de latence interactive pertinente reste la série warm.
+
+### Comparaison des modèles interactifs locaux
+
+Le 2026-08-30, le même audio de 11,818 s a été rejoué cinq fois avec le modèle Small téléchargé
+localement (`models/whisper-small`), CPU/int8, beam 1 et un seul processus. Cold start : 27,130 s ;
+ASR warm médian : 8,707 s ; tour warm médian : 9,385 s ; p95 : 10,388 s ; RTF médian : 0,794.
+
+| Mode UI | Modèle | Cold start | ASR warm médian | Tour warm médian | RTF médian |
+|---|---|---:|---:|---:|---:|
+| Rapide (défaut) | whisper-tiny | 18,313 s | 1,798 s | 2,173 s | 0,184 |
+| Précision | whisper-small | 27,130 s | 8,707 s | 9,385 s | 0,794 |
+
+Small a mieux restitué certains mots de l’échantillon, notamment « Cocody », mais cet unique audio
+ne constitue pas une mesure de précision. Il est donc proposé à la demande pour une reprise
+difficile ; Tiny demeure le défaut afin de préserver la fluidité conversationnelle.

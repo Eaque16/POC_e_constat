@@ -48,6 +48,8 @@ def test_legacy_deterministic_contract_remains_available():
 def test_missing_fields_and_offline_fallback():
     settings = Settings(
         disable_auth=True,
+        ollama_enabled=True,
+        enable_llm=True,
         ollama_base_url="http://127.0.0.1:1",
         llm_timeout_seconds=0.1,
     )
@@ -134,7 +136,9 @@ def test_malformed_ollama_json_is_a_non_blocking_fallback(monkeypatch):
         "econstat.services.extraction_llm.httpx.AsyncClient", lambda **_kwargs: FakeClient()
     )
     outcome = asyncio.run(
-        OllamaExtractor(Settings(disable_auth=True)).extract("Un accident à Cocody")
+        OllamaExtractor(Settings(disable_auth=True, ollama_enabled=True, enable_llm=True)).extract(
+            "Un accident à Cocody"
+        )
     )
 
     assert outcome.status == "unavailable"
