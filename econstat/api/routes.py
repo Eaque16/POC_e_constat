@@ -1,5 +1,6 @@
 import uuid
 from datetime import UTC, datetime
+from time import perf_counter
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
@@ -66,7 +67,9 @@ async def transcribe_live_chunk(
     settings = get_settings()
     chunk_dir = settings.recordings_dir / ".stream"
     chunk_dir.mkdir(parents=True, exist_ok=True)
-    chunk_path = chunk_dir / f"{uuid.uuid4()}.webm"
+    content_type = request.headers.get("content-type", "")
+    suffix = ".wav" if "wav" in content_type else ".webm"
+    chunk_path = chunk_dir / f"{uuid.uuid4()}{suffix}"
     chunk_path.write_bytes(audio)
     try:
         result = get_realtime_transcriber(settings, "precision").transcribe(chunk_path)
@@ -78,6 +81,7 @@ async def transcribe_live_chunk(
         "speaker": "assure",
         "text": result.text,
         "confidence": result.confidence,
+        "metrics": result.metrics.as_dict(),
     }
 
 
@@ -94,6 +98,7 @@ class ConversationClaimRequest(BaseModel):
     transcript: list[str]
     claim_id: str | None = None
     field_records: dict[str, dict] = Field(default_factory=dict)
+    complete: bool = False
 
 
 class ConversationTurnRequest(BaseModel):
@@ -120,6 +125,7 @@ def respond_to_guided_conversation(
     _: User = Depends(current_user),
 ):
     """Parse une réponse client dans le slot attendu et retourne la prochaine question."""
+    started = perf_counter()
     reply, state = respond(
         body.message,
         body.state,
@@ -130,6 +136,7 @@ def respond_to_guided_conversation(
         "state": state,
         "progress": progress(state.get("data", {})),
         "complete": state.get("current_field") is None,
+        "metrics": {"understanding_ms": round((perf_counter() - started) * 1000, 1)},
     }
 
 
@@ -332,6 +339,7 @@ def create_conversation_claim(
     db: Session = Depends(get_db),
 ):
     """Transforme une conversation guidée en dossier soumis au contrôle humain."""
+    persistence_started = perf_counter()
     data = body.data.model_dump(mode="json")
     missing = [field for field in REQUIRED_FIELDS if data.get(field) is None]
     transcript = "\n".join(line.strip() for line in body.transcript if line.strip())
@@ -350,6 +358,8 @@ def create_conversation_claim(
             "source": "guided_conversation",
             "field_records": body.field_records,
         }
+        claim.status = ClaimStatus.pending_validation if body.complete else ClaimStatus.draft
+        call.completed_at = datetime.now(UTC) if body.complete else None
         action = "conversation_claim_updated"
     else:
         call = Call(
@@ -374,7 +384,7 @@ def create_conversation_claim(
                 "ai_proposal": data,
                 "field_records": body.field_records,
             },
-            status=ClaimStatus.pending_validation,
+            status=ClaimStatus.pending_validation if body.complete else ClaimStatus.draft,
         )
         db.add(claim)
         db.flush()
@@ -389,7 +399,13 @@ def create_conversation_claim(
         )
     )
     db.commit()
-    return {"claim_id": claim.id, "call_id": call.id, "missing_fields": missing}
+    return {
+        "claim_id": claim.id,
+        "call_id": call.id,
+        "missing_fields": missing,
+        "status": claim.status.value,
+        "metrics": {"persistence_ms": round((perf_counter() - persistence_started) * 1000, 1)},
+    }
 
 
 @router.put("/calls/{call_id}/speakers", response_model=SpeakerCorrectionsResponse)

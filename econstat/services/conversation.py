@@ -65,11 +65,13 @@ FLOW = (
     "location",
     "type_accident",
     "nombre_vehicules",
+    "blesses",
     "tiers_impliques",
     "circonstances",
     "dommages",
     "zone_endommagee",
     "vehicule_immobilise",
+    "besoin_assistance",
 )
 
 SLOT_QUESTIONS = {
@@ -343,8 +345,7 @@ def respond(
                 f"Merci. {SLOT_QUESTIONS[field]}"
                 if field
                 else (
-                    "Merci. Les informations essentielles sont recueillies. "
-                    "Un agent humain devra les contrôler."
+                    "Vos informations ont bien été notées. Merci."
                 )
             )
         elif answer is False:
@@ -362,8 +363,7 @@ def respond(
                     f"{SLOT_QUESTIONS[field]}"
                     if field
                     else (
-                        "Je laisse cette information vide. Le recueil est terminé et devra "
-                        "être contrôlé par un agent."
+                        "Vos informations ont bien été notées. Merci."
                     )
                 )
             else:
@@ -425,7 +425,7 @@ def respond(
                     if field
                     else (
                         "Je n’ai toujours pas pu comprendre cette information ; je la laisse "
-                        "vide. Le recueil est terminé et devra être contrôlé par un agent."
+                        "vide. Vos autres informations ont bien été notées. Merci."
                     )
                 )
             elif field in {"firstname", "lastname"}:
@@ -447,9 +447,7 @@ def respond(
                 reply = f"Merci, c’est noté.\n\n{SLOT_QUESTIONS[field]}"
             else:
                 reply = (
-                    "Merci. Les informations essentielles sont recueillies. Vérifiez le "
-                    "récapitulatif avant de créer le dossier ; un agent humain devra encore "
-                    "le contrôler."
+                    "Vos informations ont bien été notées. Merci."
                 )
     transcript.append(f"ASSISTANT: {reply}")
     return reply, {

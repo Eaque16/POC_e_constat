@@ -3,11 +3,28 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from econstat.services.field_router import parse_expected_field
 from econstat.services.parsers.datetime_parser import parse_date, parse_datetime, parse_time
 from econstat.services.parsers.name_parser import parse_firstname, parse_lastname
 from econstat.services.parsers.spelling_parser import parse_spelling
 
 BASE = datetime(2026, 8, 29, 10, 0, tzinfo=ZoneInfo("Africa/Abidjan"))
+
+
+def test_vehicle_count_extracts_typed_number_from_natural_answer():
+    result = parse_expected_field("nombre_vehicules", "Il y avait deux voitures impliquées")
+    assert result["normalized"] == 2
+
+
+def test_open_field_removes_conversational_prefix_without_losing_evidence():
+    result = parse_expected_field("assureur", "Je suis assuré chez NSIA")
+    assert result["normalized"] == "NSIA"
+    assert result["raw_transcript"] == "Je suis assuré chez NSIA"
+
+
+def test_location_keeps_only_the_answer_to_the_expected_question():
+    result = parse_expected_field("lieu", "L'accident a eu lieu à Cocody Angré")
+    assert result["normalized"] == "Cocody Angré"
 
 
 @pytest.mark.parametrize(
